@@ -77,6 +77,21 @@ class Engine:
         c = self.cfg
         if c["source"] == "quotex":
             if not self._quotex_candles:
+                # Pre-seed with real market data if available for this symbol so chart is not empty
+                sym = c.get("symbol", "EUR/USD")
+                try:
+                    if "BTC" in sym:
+                        df_seed = D.fetch_ccxt("BTC/USDT", "1m", 100)
+                    else:
+                        df_seed = D.fetch_yfinance("EURUSD=X", "1m", "1d")
+                    if not df_seed.empty:
+                        self._quotex_candles = [
+                            {"time": int(t.timestamp()), "open": float(r["open"]), "high": float(r["high"]), "low": float(r["low"]), "close": float(r["close"]), "volume": float(r["volume"])}
+                            for t, r in df_seed.tail(60).iterrows()
+                        ]
+                        return df_seed.tail(60)
+                except Exception:
+                    pass
                 return pd.DataFrame()
             return D._norm(pd.DataFrame(self._quotex_candles))
         if c["source"] == "ccxt":
@@ -93,16 +108,28 @@ class Engine:
 
     def push_quotex_data(self, candles: list, asset: str = "Quotex", current_price: float = None) -> dict:
         """Called directly when Quotex Web Bridge sends live 1m candles & ticks."""
-        if not candles:
+        if not candles and not current_price:
             return {"status": "ignored", "reason": "empty candles"}
-        self._quotex_candles = candles
+
         if asset:
             self.cfg["symbol"] = asset
+
+        if candles:
+            self._quotex_candles = candles
+            df = D._norm(pd.DataFrame(candles))
+        elif current_price is not None and self._quotex_candles:
+            # Update last candle close with current live price tick
+            self._quotex_candles[-1]["close"] = current_price
+            self._quotex_candles[-1]["high"] = max(self._quotex_candles[-1]["high"], current_price)
+            self._quotex_candles[-1]["low"] = min(self._quotex_candles[-1]["low"], current_price)
+            df = D._norm(pd.DataFrame(self._quotex_candles))
+        else:
+            df = pd.DataFrame()
+
         self.feed_status = "connected"
         self.feed_error = None
         self.s["feed_age_s"] = 0
 
-        df = D._norm(pd.DataFrame(candles))
         if df.empty or len(df) < 5:
             return {"status": "warming_up", "candles_count": len(candles)}
 
@@ -232,6 +259,12 @@ class Engine:
             try:
                 df = self._fetch()
                 if df.empty:
+                    if self.cfg["source"] == "quotex":
+                        self.feed_status = "waiting_quotex"
+                        self.feed_error = "Awaiting live candle stream from Quotex tab..."
+                        self._data_event.wait(timeout=2.0)
+                        self._data_event.clear()
+                        continue
                     raise RuntimeError("Empty candle dataframe returned from data feed")
 
                 self._update_candles(df)
