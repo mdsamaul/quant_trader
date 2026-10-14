@@ -5,9 +5,10 @@ import threading
 import time
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, BackgroundTasks, Body, HTTPException
+from fastapi import FastAPI, BackgroundTasks, Body, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 import pandas as pd
@@ -24,6 +25,13 @@ logger = logging.getLogger("QuantTraderApp")
 engine = Engine()
 
 app = FastAPI(title="QuantTrader Quotex Terminal")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 

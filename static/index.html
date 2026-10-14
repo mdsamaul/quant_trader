@@ -356,6 +356,16 @@
         timeVisible: true,
         secondsVisible: false,
         borderColor: '#1e293b',
+        tickMarkFormatter: (time) => {
+          const dt = new Date(time * 1000);
+          return dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+        },
+      },
+      localization: {
+        timeFormatter: (time) => {
+          const dt = new Date(time * 1000);
+          return dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+        },
       },
       rightPriceScale: {
         borderColor: '#1e293b',

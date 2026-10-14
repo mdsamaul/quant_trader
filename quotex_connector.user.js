@@ -241,15 +241,33 @@
 
         let btn = null;
         if (direction === "CALL") {
-            btn = document.querySelector(".btn-call, [data-qa='deal-call'], .call-btn, .button-up, button.call");
+            btn = document.querySelector(".btn-call, [data-qa='deal-call'], .call-btn, .button-up, button.call, .button--success");
+            if (!btn) {
+                const buttons = document.querySelectorAll("button, .btn, div[role='button']");
+                for (const b of buttons) {
+                    const txt = (b.innerText || "").trim().toLowerCase();
+                    if (txt === "buy" || txt === "call" || txt === "up" || txt.startsWith("buy\n")) {
+                        btn = b; break;
+                    }
+                }
+            }
         } else if (direction === "PUT") {
-            btn = document.querySelector(".btn-put, [data-qa='deal-put'], .put-btn, .button-down, button.put");
+            btn = document.querySelector(".btn-put, [data-qa='deal-put'], .put-btn, .button-down, button.put, .button--danger");
+            if (!btn) {
+                const buttons = document.querySelectorAll("button, .btn, div[role='button']");
+                for (const b of buttons) {
+                    const txt = (b.innerText || "").trim().toLowerCase();
+                    if (txt === "sell" || txt === "put" || txt === "down" || txt.startsWith("sell\n")) {
+                        btn = b; break;
+                    }
+                }
+            }
         }
 
         if (btn) {
             btn.click();
             lastClickTime = now;
-            console.log(`[QuantTrader Auto-Click] ${direction} triggered at price ${lastRecordedPrice}!`);
+            console.log(`[QuantTrader Auto-Click] ${direction} triggered successfully at price ${lastRecordedPrice}!`);
         }
     }
 
