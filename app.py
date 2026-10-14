@@ -42,6 +42,7 @@ class AutoClickConfigIn(BaseModel):
     put_x: Optional[int] = None
     put_y: Optional[int] = None
     restore_cursor: Optional[bool] = None
+    threshold: Optional[float] = None
 
 
 class FeedConfigIn(BaseModel):
@@ -81,6 +82,58 @@ def get_index():
     return FileResponse("static/index.html")
 
 
+CURRENCY_INFO = {
+    "AUD/JPY": {
+        "full_name": "Australian Dollar / Japanese Yen",
+        "flags": "🇦🇺 🇯🇵",
+        "base_currency": "AUD (Australian Dollar)",
+        "quote_currency": "JPY (Japanese Yen)",
+        "typical_price": "~100 - 115",
+        "verification": "Your active Quotex market is AUD/JPY (Australian Dollar vs Japanese Yen). It is NOT USD/JPY.",
+    },
+    "USD/JPY": {
+        "full_name": "US Dollar / Japanese Yen",
+        "flags": "🇺🇸 🇯🇵",
+        "base_currency": "USD (US Dollar)",
+        "quote_currency": "JPY (Japanese Yen)",
+        "typical_price": "~150 - 155",
+        "verification": "Your active Quotex market is USD/JPY (US Dollar vs Japanese Yen).",
+    },
+    "EUR/USD": {
+        "full_name": "Euro / US Dollar",
+        "flags": "🇪🇺 🇺🇸",
+        "base_currency": "EUR (Euro)",
+        "quote_currency": "USD (US Dollar)",
+        "typical_price": "~1.05 - 1.15",
+        "verification": "Your active Quotex market is EUR/USD.",
+    },
+    "GBP/USD": {
+        "full_name": "British Pound / US Dollar",
+        "flags": "🇬🇧 🇺🇸",
+        "base_currency": "GBP (British Pound)",
+        "quote_currency": "USD (US Dollar)",
+        "typical_price": "~1.25 - 1.35",
+        "verification": "Your active Quotex market is GBP/USD.",
+    },
+    "EUR/JPY": {
+        "full_name": "Euro / Japanese Yen",
+        "flags": "🇪🇺 🇯🇵",
+        "base_currency": "EUR (Euro)",
+        "quote_currency": "JPY (Japanese Yen)",
+        "typical_price": "~160 - 175",
+        "verification": "Your active Quotex market is EUR/JPY.",
+    },
+    "USD/BDT": {
+        "full_name": "US Dollar / Bangladeshi Taka (OTC)",
+        "flags": "🇺🇸 🇧🇩",
+        "base_currency": "USD (US Dollar)",
+        "quote_currency": "BDT (Bangladeshi Taka)",
+        "typical_price": "~115 - 125",
+        "verification": "Your active Quotex market is USD/BDT (OTC).",
+    },
+}
+
+
 @app.get("/api/state")
 def get_state():
     snap = engine.snapshot()
@@ -112,10 +165,37 @@ def get_state():
         else:
             reasons.insert(0, f"ML Model: CALL {call_prob}% | PUT {put_prob}% (Target: ≥ {thr*100:.0f}%)")
 
+    active_mkt = snap["cfg"].get("symbol", "AUD/JPY")
+    clean_key = active_mkt.replace(" (OTC)", "").strip().upper()
+    cur_info = CURRENCY_INFO.get(clean_key, {
+        "full_name": f"{active_mkt} Currency Pair",
+        "flags": "🌐",
+        "base_currency": active_mkt.split("/")[0] if "/" in active_mkt else active_mkt,
+        "quote_currency": active_mkt.split("/")[1] if "/" in active_mkt else "",
+        "typical_price": "--",
+        "verification": f"Your active Quotex market is {active_mkt}.",
+    })
+    curr_px = float(snap["candles"][-1]["close"]) if snap.get("candles") else None
     return {
-        "symbol": snap["cfg"].get("symbol", "BTC/USDT"),
-        "source": snap["cfg"].get("source", "ccxt"),
+        "symbol": active_mkt,
+        "source": snap["cfg"].get("source", "quotex"),
+        "active_market": active_mkt,
+        "market_info": {
+            "symbol": active_mkt,
+            "full_name": cur_info["full_name"],
+            "flags": cur_info["flags"],
+            "base_currency": cur_info["base_currency"],
+            "quote_currency": cur_info["quote_currency"],
+            "typical_price": cur_info["typical_price"],
+            "verification": cur_info["verification"],
+            "is_aud_jpy": "AUD" in clean_key,
+            "is_usd_jpy": "USD" in clean_key and "JPY" in clean_key,
+            "is_otc": "OTC" in active_mkt.upper(),
+        },
+        "analyzing_market": f"{active_mkt} (Quotex Live 1M)",
+        "current_price": curr_px,
         "timeframe": snap["cfg"].get("timeframe", "1m"),
+        "feed_status": snap.get("feed_status", "connected"),
         "is_running": engine.running,
         "bot_status": st.get("status", "stopped"),
         "candles": snap.get("candles", []),
@@ -186,9 +266,11 @@ def resume_bot():
 def update_autoclick(conf: AutoClickConfigIn):
     clicker = get_clicker()
     kwargs = {k: v for k, v in conf.model_dump().items() if v is not None}
+    if "threshold" in kwargs:
+        engine.s["threshold"] = float(kwargs.pop("threshold"))
     clicker.update_config(**kwargs)
     cfg_dict = clicker.config.model_dump() if hasattr(clicker.config, "model_dump") else clicker.config.dict()
-    return {"status": "ok", "autoclick": cfg_dict}
+    return {"status": "ok", "autoclick": cfg_dict, "threshold": engine.s.get("threshold")}
 
 
 @app.post("/api/config/feed")

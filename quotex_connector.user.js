@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         QuantTrader Quotex Live Bridge & AI Predictor
 // @namespace    http://localhost:8000/
-// @version      2.2
+// @version      3.0
 // @description  Stream real-time Quotex ticks & candles to QuantTrader AI terminal & display predictions directly on Quotex chart.
 // @author       QuantTrader
 // @match        *://market-qx.info/*
@@ -16,6 +16,7 @@
 // @match        *://*.quotex.*/*
 // @match        *://*/*
 // @run-at       document-start
+// @grant        unsafeWindow
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @connect      127.0.0.1
@@ -32,15 +33,14 @@
 
     const API_URL = "http://127.0.0.1:8000/api/quotex/feed";
     let isConnected = false;
-    let currentAsset = "EUR/USD";
+    let currentAsset = "AUD/JPY";
     let activeCandles = [];
     let currentBar = null;
-    let lastSentTime = 0;
     let autoTradeInBrowser = false;
     let lastClickTime = 0;
     let lastRecordedPrice = null;
 
-    console.log("%c[QuantTrader]%c Quotex Live Bridge Active on " + host, "background: #6366f1; color: white; padding: 2px 6px; border-radius: 4px;", "");
+    console.log("%c[QuantTrader]%c Quotex Live Bridge 3.0 Active on " + host, "background: #6366f1; color: white; padding: 2px 6px; border-radius: 4px;", "");
 
     // -------------------------------------------------------------
     // 1. FLOATING HUD OVERLAY ON QUOTEX
@@ -55,10 +55,10 @@
         hud.innerHTML = `
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;cursor:move;">
                 <div style="display:flex;align-items:center;gap:6px;">
-                    <div id="qt-status-dot" style="width:10px;height:10px;border-radius:50%;background:#ef4444;box-shadow:0 0 8px #ef4444;"></div>
+                    <div id="qt-status-dot" style="width:10px;height:10px;border-radius:50%;background:#ef4444;box-shadow:0 0 8px #ef4444;transition:all 0.3s ease;"></div>
                     <span style="font-weight:700;font-size:12px;letter-spacing:0.5px;color:#f8fafc;">QuantTrader AI</span>
                 </div>
-                <span id="qt-asset" style="font-size:10px;padding:2px 6px;background:rgba(255,255,255,0.08);border-radius:4px;color:#cbd5e1;font-family:monospace;font-weight:600;">CONNECTING</span>
+                <span id="qt-asset" style="font-size:10px;padding:2px 6px;background:rgba(255,255,255,0.08);border-radius:4px;color:#cbd5e1;font-family:monospace;font-weight:600;">CONNECTING...</span>
             </div>
             <div style="background:rgba(15,23,42,0.7);border-radius:8px;padding:8px;margin-bottom:8px;text-align:center;">
                 <div style="font-size:10px;color:#94a3b8;margin-bottom:2px;letter-spacing:0.5px;">AI PREDICTION (1M)</div>
@@ -68,11 +68,11 @@
                     <span style="color:#475569;">|</span>
                     <span id="qt-put-prob" style="color:#f43f5e;font-weight:700;">PUT: --%</span>
                 </div>
-                <div id="qt-target" style="font-size:10px;color:#818cf8;margin-top:3px;font-family:monospace;">Target: ≥62%</div>
+                <div id="qt-target" style="font-size:10px;color:#818cf8;margin-top:3px;font-family:monospace;">Target: ≥58%</div>
                 <div id="qt-price" style="font-size:10px;color:#94a3b8;margin-top:2px;font-family:monospace;">Price: --</div>
             </div>
             <div id="qt-reasons" style="font-size:10px;color:#64748b;max-height:45px;overflow-y:auto;margin-bottom:8px;line-height:1.3;">
-                Syncing live 1m candles...
+                Connecting to QuantTrader AI terminal...
             </div>
             <div style="display:flex;gap:6px;align-items:center;justify-content:space-between;font-size:11px;color:#94a3b8;border-top:1px solid rgba(255,255,255,0.08);padding-top:6px;">
                 <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
@@ -125,7 +125,7 @@
         document.addEventListener("mouseup", () => { isDragging = false; });
     }
 
-    function updateHUD(status, signal, confidence, reasons, asset, price, ml_prob, threshold) {
+    function updateHUD(status, signal, confidence, reasons, asset, price, ml_prob, threshold, open_trade) {
         createHUD();
         const dot = document.getElementById("qt-status-dot");
         const sigEl = document.getElementById("qt-signal");
@@ -143,7 +143,7 @@
         if (assetEl && asset) assetEl.innerText = asset.toUpperCase();
         if (priceEl && price) priceEl.innerText = `Price: ${price}`;
 
-        const thrVal = threshold ? Math.round(threshold * 100) : 62;
+        const thrVal = threshold ? Math.round(threshold * 100) : 58;
         if (targetEl) targetEl.innerText = `Target to Trade: ≥${thrVal}%`;
 
         if (ml_prob !== null && ml_prob !== undefined) {
@@ -154,13 +154,18 @@
         }
 
         if (sigEl) {
-            sigEl.innerText = signal;
-            if (signal === "CALL") {
-                sigEl.style.color = "#10b981";
-            } else if (signal === "PUT") {
-                sigEl.style.color = "#f43f5e";
+            if (open_trade) {
+                sigEl.innerText = `IN TRADE (${open_trade.dir})`;
+                sigEl.style.color = "#38bdf8";
             } else {
-                sigEl.style.color = "#fbbf24";
+                sigEl.innerText = signal;
+                if (signal === "CALL") {
+                    sigEl.style.color = "#10b981";
+                } else if (signal === "PUT") {
+                    sigEl.style.color = "#f43f5e";
+                } else {
+                    sigEl.style.color = "#fbbf24";
+                }
             }
         }
         if (reasonsEl && reasons && reasons.length) {
@@ -196,12 +201,6 @@
             currentBar.close = price;
             currentBar.volume += 1.0;
         }
-
-        const now = Date.now();
-        if (now - lastSentTime >= 1000) {
-            lastSentTime = now;
-            sendToQuantTrader();
-        }
     }
 
     function sendToQuantTrader() {
@@ -221,12 +220,24 @@
                 const res = JSON.parse(respText);
                 isConnected = true;
                 if (res.signal) {
-                    updateHUD(true, res.signal.action, res.signal.confidence, res.signal.reasons, currentAsset, lastRecordedPrice, res.signal.ml_prob, res.signal.threshold);
-                    if (autoTradeInBrowser && (res.signal.action === "CALL" || res.signal.action === "PUT")) {
+                    updateHUD(
+                        true, 
+                        res.signal.action, 
+                        res.signal.confidence, 
+                        res.signal.reasons, 
+                        currentAsset, 
+                        lastRecordedPrice, 
+                        res.signal.ml_prob, 
+                        res.signal.threshold,
+                        res.open_trade
+                    );
+                    if (autoTradeInBrowser && !res.open_trade && (res.signal.action === "CALL" || res.signal.action === "PUT")) {
                         checkAndClickDOM(res.signal.action, res.signal.confidence);
                     }
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.error("[QuantTrader] Parse error:", e);
+            }
         };
 
         if (typeof GM_xmlhttpRequest !== "undefined") {
@@ -236,7 +247,17 @@
                 headers: { "Content-Type": "application/json" },
                 data: postData,
                 onload: (response) => handleSuccess(response.responseText),
-                onerror: () => updateHUD(false, "DISCONNECTED", 0.0, ["Start terminal: python app.py"], currentAsset, lastRecordedPrice)
+                onerror: () => {
+                    // Try fetch fallback if GM_xmlhttpRequest is blocked
+                    fetch(API_URL, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: postData
+                    })
+                    .then(r => r.text())
+                    .then(handleSuccess)
+                    .catch(() => updateHUD(false, "DISCONNECTED", 0.0, ["Tampermonkey: Click icon -> Always Allow 127.0.0.1", "Or ensure 'python app.py' is running."], currentAsset, lastRecordedPrice));
+                }
             });
         } else {
             fetch(API_URL, {
@@ -253,7 +274,7 @@
     function checkAndClickDOM(direction, confidence) {
         const now = Date.now();
         if (now - lastClickTime < 3000) return;
-        if (confidence < 0.65) return;
+        if (confidence < 0.55) return;
 
         let btn = null;
         if (direction === "CALL") {
@@ -283,76 +304,100 @@
         if (btn) {
             btn.click();
             lastClickTime = now;
-            console.log(`[QuantTrader Auto-Click] ${direction} triggered successfully at price ${lastRecordedPrice}!`);
+            console.log(`%c[QuantTrader Auto-Click]%c ${direction} clicked via DOM at price ${lastRecordedPrice}!`, "background: #10b981; color: white;", "");
         }
     }
 
     // -------------------------------------------------------------
-    // 3. WEBSOCKET HOOKING
+    // 3. WEBSOCKET HOOKING (Both unsafeWindow & window)
     // -------------------------------------------------------------
-    const OrigWebSocket = window.WebSocket;
-    window.WebSocket = function(...args) {
-        const ws = new OrigWebSocket(...args);
-        console.log("[QuantTrader] WebSocket connected:", args[0]);
+    const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+    if (win && win.WebSocket) {
+        const OrigWebSocket = win.WebSocket;
+        win.WebSocket = function(...args) {
+            const ws = new OrigWebSocket(...args);
+            console.log("[QuantTrader] Quotex WebSocket hooked:", args[0]);
 
-        ws.addEventListener("message", function(e) {
-            try {
-                if (typeof e.data === "string") {
-                    let raw = e.data;
-                    if (raw.startsWith("42")) raw = raw.slice(2);
-                    if (raw.startsWith("[") || raw.startsWith("{")) {
-                        const parsed = JSON.parse(raw);
-                        if (Array.isArray(parsed)) {
-                            const topic = parsed[0];
-                            const d = parsed[1];
-                            if (d && typeof d === 'object') {
-                                if (d.price) addTick(Number(d.price));
-                                else if (d.live) addTick(Number(d.live));
-                                else if (Array.isArray(d)) addTick(Number(d[1] || d[0]));
+            ws.addEventListener("message", function(e) {
+                try {
+                    if (typeof e.data === "string") {
+                        let raw = e.data;
+                        if (raw.startsWith("42")) raw = raw.slice(2);
+                        if (raw.startsWith("[") || raw.startsWith("{")) {
+                            const parsed = JSON.parse(raw);
+                            if (Array.isArray(parsed)) {
+                                const d = parsed[1];
+                                if (d && typeof d === 'object') {
+                                    if (d.price) addTick(Number(d.price));
+                                    else if (d.live) addTick(Number(d.live));
+                                    else if (d.rate) addTick(Number(d.rate));
+                                    else if (Array.isArray(d)) addTick(Number(d[1] || d[0]));
+                                }
+                            } else if (parsed && typeof parsed === 'object') {
+                                if (parsed.price) addTick(Number(parsed.price));
+                                else if (parsed.rate) addTick(Number(parsed.rate));
                             }
-                        } else if (parsed && parsed.price) {
-                            addTick(Number(parsed.price));
                         }
                     }
-                }
-            } catch (err) {}
-        });
+                } catch (err) {}
+            });
 
-        return ws;
-    };
-    window.WebSocket.prototype = OrigWebSocket.prototype;
+            return ws;
+        };
+        win.WebSocket.prototype = OrigWebSocket.prototype;
+    }
 
     // -------------------------------------------------------------
     // 4. ROBUST DOM TICK & ASSET SCANNER
     // -------------------------------------------------------------
     function scanQuotexDOM() {
-        // 1. Detect active asset name (e.g. EUR/USD, EUR/USD (OTC), USD/BDT (OTC))
+        // 1. Detect active asset name (e.g. AUD/JPY, USD/JPY, EUR/USD, EUR/USD (OTC))
         let foundAsset = null;
-        const activeTab = document.querySelector(".tabs__item--active .tabs__text, .tab--active .tab__title, .tab.active, [class*='tab'][class*='active'] [class*='title'], [class*='tab'][class*='active'] [class*='name'], .header-chart__asset-name");
-        if (activeTab && activeTab.innerText) {
-            foundAsset = activeTab.innerText;
+        const pairRegex = /\b([A-Z]{3}\/[A-Z]{3}(?:\s*\(OTC\))?)\b/i;
+
+        // Method A: Active tab
+        const activeTabs = document.querySelectorAll(".tabs__item--active, .tab--active, .tab.active, [class*='tab'][class*='active'], [class*='tab-item--active']");
+        for (const t of activeTabs) {
+            const m = (t.innerText || "").match(pairRegex);
+            if (m && m[1]) {
+                foundAsset = m[1].toUpperCase();
+                break;
+            }
         }
+
+        // Method B: Right deal/trade sidebar
         if (!foundAsset) {
-            const assetEl = document.querySelector(".asset-select__name, .current-symbol, .trading-chart-header__symbol, [data-qa='asset-name'], .section-deal__asset, [class*='deal-form'] [class*='asset']");
-            if (assetEl && assetEl.innerText) {
-                foundAsset = assetEl.innerText;
+            const dealForms = document.querySelectorAll(".section-deal, [class*='deal-form'], [class*='sidebar__asset'], [class*='asset-select'], [data-qa='asset-name'], [class*='current-symbol']");
+            for (const df of dealForms) {
+                const m = (df.innerText || "").match(pairRegex);
+                if (m && m[1]) {
+                    foundAsset = m[1].toUpperCase();
+                    break;
+                }
             }
         }
-        if (!foundAsset && document.title) {
-            const m = document.title.match(/([A-Z0-9/_\-\s]+)\s*\|/i);
-            if (m && m[1] && !m[1].toLowerCase().includes("trading") && !m[1].toLowerCase().includes("quotex")) {
-                foundAsset = m[1];
+
+        // Method C: Any header or tabs container
+        if (!foundAsset) {
+            const headers = document.querySelectorAll(".header-chart, header, .tabs, [class*='tabs']");
+            for (const h of headers) {
+                const m = (h.innerText || "").match(pairRegex);
+                if (m && m[1]) {
+                    foundAsset = m[1].toUpperCase();
+                    break;
+                }
             }
         }
+
         if (foundAsset) {
-            const clean = foundAsset.replace(/[+\-]?\d+%/g, '').replace(/[\n\r]+/g, ' ').trim();
-            if (clean && clean.length >= 3 && clean.length <= 30 && clean !== currentAsset) {
+            const clean = foundAsset.trim();
+            if (clean && clean !== currentAsset) {
                 currentAsset = clean;
                 console.log("[QuantTrader] Switched Active Asset to:", currentAsset);
             }
         }
 
-        // 2. Check "PAIR INFORMATION: 1.11921" (exact text from user screenshot on top-left)
+        // 2. Check "PAIR INFORMATION: 1.11921" or direct price elements
         const allSpans = document.querySelectorAll("span, div, p");
         let foundPrice = null;
 
@@ -368,7 +413,7 @@
 
         // 3. Fallback: Check right price axis bubble or current-quote
         if (!foundPrice) {
-            const quoteEls = document.querySelectorAll(".deal-form__current-quote, .current-price, .chart-quote, .section-deal__rate, [data-qa='current-quote']");
+            const quoteEls = document.querySelectorAll(".deal-form__current-quote, .current-price, .chart-quote, .section-deal__rate, [data-qa='current-quote'], [class*='current-quote'], [class*='price-current'], [class*='rate-value']");
             for (const el of quoteEls) {
                 const txt = el.innerText ? el.innerText.replace(/[^0-9.]/g, '') : "";
                 const num = parseFloat(txt);
@@ -384,8 +429,11 @@
         }
     }
 
-    // Run DOM scanner every 250ms
-    setInterval(scanQuotexDOM, 250);
+    // Run DOM scanner every 200ms
+    setInterval(scanQuotexDOM, 200);
+
+    // Heartbeat every 1000ms: Guaranteed constant sync with QuantTrader AI engine
+    setInterval(sendToQuantTrader, 1000);
 
     // Ensure HUD is rendered
     setInterval(createHUD, 1000);

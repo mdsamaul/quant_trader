@@ -19,8 +19,8 @@ class Engine:
     def __init__(self):
         self.clicker = get_clicker()
         self.cfg = {
-            "source": "ccxt",
-            "symbol": "BTC/USDT",
+            "source": "quotex",
+            "symbol": "AUD/JPY",
             "timeframe": "1m",
             "poll": 5,
             "model": "models/model.joblib",
@@ -172,8 +172,18 @@ class Engine:
         self.feed_error = None
         self.s["feed_age_s"] = 0
 
-        if asset and asset not in ["QUOTEX-CHART", "Quotex"]:
-            self.cfg["symbol"] = asset
+        clean_asset = (asset or "").strip()
+        if clean_asset and clean_asset.lower() not in ["quotex-chart", "quotex", "connecting"]:
+            old_asset = self.cfg.get("symbol")
+            if old_asset and old_asset != clean_asset and old_asset not in ["BTC/USDT"]:
+                # When market is switched on Quotex (e.g. from AUD/JPY to EUR/USD),
+                # reset the candle buffer so different price scales don't distort ML features & indicators
+                self.candles = []
+                self._say(f"Quotex Market switched to {clean_asset}. Fresh candle analysis initiated.")
+            self.cfg["symbol"] = clean_asset
+            self.cfg["source"] = "quotex"
+            self.s["active_market"] = clean_asset
+            self.s["analyzing_asset"] = clean_asset
 
         minute_bucket = (now_ts // 60) * 60
 
@@ -223,8 +233,11 @@ class Engine:
         # Sync _quotex_candles
         self._quotex_candles = list(self.candles)
 
-        # Build DataFrame for indicators and signals
+        bundle = getattr(self, "bundle", None)
+        mdl = bundle.get("model") if bundle else None
+        thr = float(self.s.get("threshold") or (bundle.get("threshold", 0.58) if bundle else 0.58))
         action, conf, reasons, ml_prob = "WAIT", 0.0, [], None
+
         if len(self.candles) >= 5:
             try:
                 df = pd.DataFrame(self.candles)
@@ -243,10 +256,6 @@ class Engine:
                 self.s["confluence"] = {"action": action, "confidence": conf, "reasons": reasons}
                 self.s["last_signal"] = action
 
-                bundle = getattr(self, "bundle", None)
-                mdl = bundle.get("model") if bundle else None
-                thr = bundle.get("threshold", 0.55) if bundle else 0.55
-
                 if len(df) >= 30 and mdl is not None:
                     X = build_features(df).iloc[[-1]]
                     if X.notna().all(axis=1).iloc[0]:
@@ -262,6 +271,18 @@ class Engine:
                             conf = max(conf, round(1.0 - ml_prob, 2))
                             reasons.append(f"ML Model PUT (p={ml_prob:.2f} <= {1.0-thr:.2f})")
 
+                # If waiting, provide clear reason for transparency
+                if action == "WAIT":
+                    call_pct = round(ml_prob * 100, 1) if ml_prob is not None else 50.0
+                    put_pct = round((1.0 - ml_prob) * 100, 1) if ml_prob is not None else 50.0
+                    thr_pct = round(thr * 100, 1)
+                    reasons.append(f"Neutral Chop (CALL: {call_pct}%, PUT: {put_pct}% < {thr_pct}% Target)")
+
+                # If open trade is in progress, note it
+                if self.s.get("open_trade"):
+                    ot = self.s["open_trade"]
+                    reasons.append(f"Trade in progress: {ot.get('dir')} @ {ot.get('entry')}")
+
                 # If auto-click bot is running, execute trade
                 if self.running and action in ["CALL", "PUT"] and self.s["open_trade"] is None:
                     bar = df.index[-1]
@@ -270,6 +291,8 @@ class Engine:
                         self._open(prob, thr, df, bar)
             except Exception as e:
                 pass
+        else:
+            reasons.append(f"Collecting candles ({len(self.candles)}/5 minimum)")
 
         self._data_event.set()
         return {
@@ -352,7 +375,7 @@ class Engine:
     # ---------- loop ----------
     def _loop(self):
         mdl = self.bundle.get("model")
-        thr = self.bundle.get("threshold", 0.55)
+        thr = float(self.s.get("threshold") or self.bundle.get("threshold", 0.55))
         expiry = self.bundle.get("expiry", 1)
         payout = self.bundle.get("payout", 0.85)
         last_bar, trade = None, None

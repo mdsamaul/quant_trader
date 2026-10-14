@@ -113,6 +113,17 @@
 
     <!-- Status & Action Buttons -->
     <div class="flex items-center space-x-3">
+      <!-- Active Market Pill -->
+      <div id="marketStatusPill" class="flex items-center space-x-2 bg-indigo-500/10 border border-indigo-500/30 px-3 py-1.5 rounded-xl text-xs font-semibold text-indigo-300">
+        <i class="fa-solid fa-chart-line text-indigo-400"></i>
+        <span>Market:</span>
+        <span id="navMarketDisplay" class="font-bold text-white tracking-wide">AUD/JPY</span>
+        <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono flex items-center gap-1">
+          <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>ANALYZING</span>
+        </span>
+      </div>
+
       <!-- Live Status Pill -->
       <div id="connectionPill" class="flex items-center space-x-2 bg-dark-card border border-dark-border px-3 py-1.5 rounded-xl text-xs font-medium text-amber-400">
         <span class="h-2.5 w-2.5 rounded-full bg-amber-400 pulse-dot"></span>
@@ -133,18 +144,34 @@
 
   <!-- METRICS CARDS GRID (4 Cards) -->
   <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-    <!-- Card 1: Active Asset -->
+    <!-- Card 1: Active Asset & Market Analysis -->
     <div class="glass-panel p-4 flex flex-col justify-between relative overflow-hidden group hover:border-indigo-500/40 transition">
       <div class="flex justify-between items-start">
-        <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">Active Asset</span>
-        <span class="text-xs px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono" id="timeframeBadge">1M</span>
+        <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">Active Quotex Market</span>
+        <span class="text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono font-bold flex items-center gap-1" id="timeframeBadge">
+          <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span id="marketBadgeText">LIVE 1M</span>
+        </span>
       </div>
       <div class="my-2">
-        <div class="text-xl font-extrabold text-white tracking-tight" id="assetDisplay">BTC/USDT</div>
-        <div class="text-[11px] text-gray-400 mt-0.5" id="feedSourceDisplay">Exchange: Binance (Live Spot)</div>
+        <div class="text-2xl font-black text-white tracking-tight flex items-center gap-2" id="assetDisplay">
+          🇦🇺 🇯🇵 AUD/JPY
+        </div>
+        <div class="text-xs text-emerald-300 font-semibold mt-0.5" id="marketFullName">
+          Australian Dollar / Japanese Yen
+        </div>
+        <div id="marketVerificationBadge" class="text-[11px] mt-1.5 px-2 py-1 rounded bg-dark-bg/80 border border-dark-border text-gray-300">
+          <i class="fa-solid fa-circle-check text-emerald-400 mr-1"></i> Verified: <b class="text-white">AUD/JPY</b> (Australian Dollar vs Yen) — <span class="text-amber-400 font-medium">Not USD/JPY</span>
+        </div>
+        <div class="text-[11px] text-indigo-300 font-medium mt-1.5 flex items-center gap-1.5" id="analyzingDisplay">
+          <i class="fa-solid fa-brain text-indigo-400 text-xs animate-pulse"></i> 
+          <span>Analyzing: <b id="analyzingMarketText" class="text-white font-bold">AUD/JPY</b> (Quotex Live)</span>
+        </div>
+        <div class="text-[10px] text-gray-400 mt-0.5" id="feedSourceDisplay">Broker: Quotex Live Web Bridge</div>
       </div>
-      <div class="text-[11px] text-emerald-400 flex items-center">
-        <i class="fa-regular fa-clock mr-1"></i> <span id="barTimeDisplay">Waiting for candle...</span>
+      <div class="text-[11px] text-emerald-400 flex items-center justify-between border-t border-dark-border/40 pt-2 mt-1">
+        <span id="barTimeDisplay" class="flex items-center"><i class="fa-regular fa-clock mr-1"></i> Waiting for candle...</span>
+        <span id="livePriceDisplay" class="font-mono font-bold text-white text-xs">Price: 110.469</span>
       </div>
     </div>
 
@@ -213,7 +240,13 @@
       <div class="flex flex-wrap justify-between items-center mb-3 pb-2 border-b border-dark-border gap-2">
         <div class="flex items-center space-x-2">
           <i class="fa-solid fa-chart-candlestick text-indigo-400 text-sm"></i>
-          <h2 class="text-sm font-semibold text-white tracking-wide">Live Stream & Technical Overlays</h2>
+          <h2 class="text-sm font-semibold text-white tracking-wide">
+            Chart: <span id="chartMarketTitle" class="text-indigo-400 font-bold">AUD/JPY</span> (1M)
+          </h2>
+          <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono flex items-center gap-1">
+            <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>ANALYZING LIVE</span>
+          </span>
         </div>
         <div class="flex items-center space-x-3 text-xs">
           <span class="flex items-center gap-1.5 text-gray-400 font-mono"><span class="h-2 w-2 rounded-full bg-emerald-400"></span> CALL</span>
@@ -265,6 +298,16 @@
               <input id="putY" type="number" placeholder="Y" class="bg-dark-card border border-dark-border rounded px-2 py-1 w-16 text-center text-white focus:outline-none focus:border-indigo-500 font-mono text-xs">
               <button onclick="testClick('PUT')" class="bg-rose-600/30 hover:bg-rose-600 text-rose-300 hover:text-white px-2 py-1 rounded transition text-[11px] font-medium" title="Test Click at PUT Coords">Test</button>
             </div>
+          </div>
+
+          <!-- Trade Threshold / Sensitivity -->
+          <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-dark-bg border border-dark-border">
+            <span class="text-indigo-300 font-semibold flex items-center gap-1.5"><i class="fa-solid fa-sliders"></i> Trigger Target:</span>
+            <select id="tradeThresholdSelect" onchange="saveAutoclickConfig()" class="bg-dark-card border border-dark-border rounded px-2 py-1 text-white text-xs font-mono focus:outline-none focus:border-indigo-500">
+              <option value="0.55">55% (Fast / Frequent Trades)</option>
+              <option value="0.58">58% (Balanced / Recommended)</option>
+              <option value="0.62" selected>62% (Strict / High Win Rate)</option>
+            </select>
           </div>
 
           <!-- Quick Tools (Auto-Scan & Grab Cursor) -->
@@ -489,15 +532,17 @@
       const call_y = parseInt(document.getElementById('callY').value) || 0;
       const put_x = parseInt(document.getElementById('putX').value) || 0;
       const put_y = parseInt(document.getElementById('putY').value) || 0;
+      const thrEl = document.getElementById('tradeThresholdSelect');
+      const threshold = thrEl ? parseFloat(thrEl.value) : 0.58;
 
       try {
         const res = await fetch('/api/config/autoclick', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ enabled, call_x, call_y, put_x, put_y })
+          body: JSON.stringify({ enabled, call_x, call_y, put_x, put_y, threshold })
         });
         const data = await res.json();
-        showToast(enabled ? 'Auto-clicker enabled & coordinates saved!' : 'Coordinates saved (Auto-clicker off)', 'success');
+        showToast(enabled ? `Auto-clicker enabled (Target: ${(threshold*100).toFixed(0)}%)!` : 'Coordinates saved (Auto-clicker off)', 'success');
       } catch (e) {
         showToast('Error saving clicker config: ' + e.message, 'error');
       }
@@ -633,9 +678,35 @@
           text.innerText = 'Connecting...';
         }
 
-        // Sync Asset Display
-        document.getElementById('assetDisplay').innerText = data.symbol;
-        document.getElementById('feedSourceDisplay').innerText = `Source: ${data.source.toUpperCase()} (${data.timeframe})`;
+        // Sync Asset & Market Analysis Display
+        const marketName = data.active_market || data.symbol || 'AUD/JPY';
+        const mi = data.market_info || {};
+        const flags = mi.flags || '🌐';
+        const fullName = mi.full_name || marketName;
+
+        const assetEl = document.getElementById('assetDisplay');
+        if (assetEl) assetEl.innerHTML = `${flags} ${marketName}`;
+        const navMarketEl = document.getElementById('navMarketDisplay');
+        if (navMarketEl) navMarketEl.innerHTML = `${flags} ${marketName}`;
+        const chartTitleEl = document.getElementById('chartMarketTitle');
+        if (chartTitleEl) chartTitleEl.innerText = `${flags} ${marketName}`;
+        const analyzingTextEl = document.getElementById('analyzingMarketText');
+        if (analyzingTextEl) analyzingTextEl.innerText = marketName;
+        const fullNameEl = document.getElementById('marketFullName');
+        if (fullNameEl) fullNameEl.innerText = fullName;
+
+        const verifEl = document.getElementById('marketVerificationBadge');
+        if (verifEl) {
+          if (mi.is_aud_jpy) {
+            verifEl.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400 mr-1"></i> Verified: <b class="text-white">AUD/JPY</b> (Australian Dollar vs Yen) — <span class="text-amber-400 font-bold">Not USD/JPY</span>`;
+          } else if (mi.is_usd_jpy) {
+            verifEl.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400 mr-1"></i> Verified: <b class="text-white">USD/JPY</b> (US Dollar vs Japanese Yen)`;
+          } else {
+            verifEl.innerHTML = `<i class="fa-solid fa-circle-check text-indigo-400 mr-1"></i> Active: <b class="text-white">${marketName}</b> (${fullName})`;
+          }
+        }
+
+        document.getElementById('feedSourceDisplay').innerText = `Broker: Quotex (${data.source.toUpperCase()}) | TF: ${data.timeframe}`;
         document.getElementById('lastUpdatedDisplay').innerText = `Synced: ${new Date().toLocaleTimeString()}`;
 
         // Sync Bot Button
@@ -651,7 +722,10 @@
           }
           const lastCandle = data.candles[data.candles.length - 1];
           const dt = new Date(lastCandle.time * 1000);
-          document.getElementById('barTimeDisplay').innerText = `Bar: ${dt.toLocaleTimeString()} | C: ${lastCandle.close}`;
+          document.getElementById('barTimeDisplay').innerText = `Bar: ${dt.toLocaleTimeString()}`;
+          const livePriceEl = document.getElementById('livePriceDisplay');
+          const curPrice = data.current_price !== null && data.current_price !== undefined ? data.current_price : lastCandle.close;
+          if (livePriceEl) livePriceEl.innerText = `Price: ${curPrice}`;
         }
 
         // Signal Display
@@ -771,6 +845,17 @@
             document.getElementById('callY').value = data.autoclick.call_y || 0;
             document.getElementById('putX').value = data.autoclick.put_x || 0;
             document.getElementById('putY').value = data.autoclick.put_y || 0;
+          }
+          if (data.session && data.session.threshold) {
+            const thrSel = document.getElementById('tradeThresholdSelect');
+            if (thrSel) {
+              const val = String(data.session.threshold);
+              for (let i = 0; i < thrSel.options.length; i++) {
+                if (thrSel.options[i].value === val) {
+                  thrSel.selectedIndex = i; break;
+                }
+              }
+            }
           }
           configInputsInitialized = true;
         }
