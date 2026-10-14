@@ -30,6 +30,9 @@ class Engine:
         }
         self.thread, self.running = None, False
         self.candles = []
+        self._quotex_candles = []
+        self._data_event = threading.Event()
+        self.vision_signal = None
         self.feed_status = "idle"
         self.feed_error = None
         self._replay = None
@@ -72,6 +75,10 @@ class Engine:
     # ---------- data ----------
     def _fetch(self):
         c = self.cfg
+        if c["source"] == "quotex":
+            if not self._quotex_candles:
+                return pd.DataFrame()
+            return D._norm(pd.DataFrame(self._quotex_candles))
         if c["source"] == "ccxt":
             return D.fetch_ccxt(c["symbol"], c["timeframe"], 200)
         if c["source"] == "yf":
@@ -83,6 +90,79 @@ class Engine:
         if self._i >= len(self._replay):
             self._i = 300
         return self._replay.iloc[: self._i]
+
+    def push_quotex_data(self, candles: list, asset: str = "Quotex", current_price: float = None) -> dict:
+        """Called directly when Quotex Web Bridge sends live 1m candles & ticks."""
+        if not candles:
+            return {"status": "ignored", "reason": "empty candles"}
+        self._quotex_candles = candles
+        if asset:
+            self.cfg["symbol"] = asset
+        self.feed_status = "connected"
+        self.feed_error = None
+        self.s["feed_age_s"] = 0
+
+        df = D._norm(pd.DataFrame(candles))
+        if df.empty or len(df) < 5:
+            return {"status": "warming_up", "candles_count": len(candles)}
+
+        self._update_candles(df)
+
+        # Technical confluence
+        action, conf, reasons = generate_signal(df)
+        if self.vision_signal and self.vision_signal.get("action") in ["CALL", "PUT"]:
+            va = self.vision_signal["action"]
+            vc = self.vision_signal.get("confidence", 0.0)
+            if va == action:
+                conf = min(0.99, conf + 0.15)
+                reasons.append(f"Visual Confirmation ({va} {vc*100:.0f}%)")
+
+        self.s["confluence"] = {"action": action, "confidence": conf, "reasons": reasons}
+
+        # ML model prediction
+        ml_prob = None
+        bundle = getattr(self, "bundle", None)
+        mdl = bundle.get("model") if bundle else None
+        thr = bundle.get("threshold", 0.55) if bundle else 0.55
+
+        if len(df) >= 30 and mdl is not None:
+            try:
+                X = build_features(df).iloc[[-1]]
+                if X.notna().all(axis=1).iloc[0]:
+                    p = float(mdl.predict_proba(X)[0])
+                    ml_prob = round(p, 4)
+                    self.s["last_prob"] = ml_prob
+                    if p >= thr:
+                        action = "CALL"
+                        conf = max(conf, round(ml_prob, 2))
+                        reasons.append(f"ML Model CALL (p={ml_prob:.2f} >= {thr:.2f})")
+                    elif p <= 1.0 - thr:
+                        action = "PUT"
+                        conf = max(conf, round(1.0 - ml_prob, 2))
+                        reasons.append(f"ML Model PUT (p={ml_prob:.2f} <= {1.0-thr:.2f})")
+            except Exception as e:
+                self._say(f"ML prediction error on live feed: {e}")
+
+        # If bot is running and source is quotex, trigger auto-trade
+        if self.running and self.cfg["source"] in ["quotex", "ccxt"]:
+            bar = df.index[-1]
+            if action in ["CALL", "PUT"] and self.s["open_trade"] is None:
+                prob = ml_prob if ml_prob is not None else (0.75 if action == "CALL" else 0.25)
+                if (action == "CALL" and prob >= thr) or (action == "PUT" and prob <= 1.0 - thr):
+                    self._open(prob, thr, df, bar)
+
+        self._data_event.set()
+        return {
+            "status": "ok",
+            "signal": {
+                "action": action,
+                "confidence": conf,
+                "reasons": reasons,
+                "ml_prob": ml_prob,
+            },
+            "bot_running": self.running,
+            "open_trade": self.s["open_trade"],
+        }
 
     def _update_candles(self, df: pd.DataFrame):
         recs = []
@@ -197,8 +277,11 @@ class Engine:
             except Exception as e:
                 self.feed_status = "error"
                 self.feed_error = str(e)
-                self._say(f"error: {e}")
-            time.sleep(0.15 if self.cfg["source"] == "replay" else float(self.cfg["poll"]))
+            if self.cfg["source"] == "quotex":
+                self._data_event.wait(timeout=1.0)
+                self._data_event.clear()
+            else:
+                time.sleep(0.15 if self.cfg["source"] == "replay" else float(self.cfg["poll"]))
 
     def _open(self, p, thr, df, bar):
         direction = "CALL" if p >= thr else "PUT"

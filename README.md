@@ -18,6 +18,13 @@ python app.py        # then open http://localhost:8000
 1. Train & Backtest (বা `replay` সোর্স দিয়ে ডেমো) 2. Start 3. Auto-click চালু করতে CALL/PUT position set করো, Test দিয়ে যাচাই করো, তারপর checkbox on।
 Safety: Auto-click default off; N টানা loss হলে auto halt; daily trade limit। শুধু Demo account।
 
+## ⚡ Quotex Real-Time Integration (Live Chart Sync & Vision)
+1. **Web Bridge (0ms Latency - Recommended):**
+   - কোটেক্সের লাইভ OTC ও রিয়েল পেয়ারের ১-মিনিটের ক্যান্ডেল সরাসরি ব্রাউজার থেকে পাইথন ইঞ্জিনে স্ট্রিম করতে [quotex_connector.user.js](quotex_connector.user.js) ব্যবহার করুন (Tampermonkey বা Chrome Console-এ চালান)।
+   - ব্রাউজারে Quotex চার্টের উপরেই লাইভ AI প্রবাবিলিটি HUD দেখাবে এবং স্বয়ংক্রিয়ভাবে ইঞ্জিনে সিগন্যাল পাঠাবে।
+2. **Screen Vision (OpenCV):**
+   - OpenCV ও Win32 API দিয়ে Quotex উইন্ডো ট্র্যাক করে ক্যান্ডেলের রঙ ও মোমেন্টাম বিশ্লেষণ করা যায়। UI-এর "Quotex Connect" থেকে এক ক্লিকে চালু করা যায়।
+
 ## Algorithms
 - Indicators: EMA 9/21/50, RSI 7/14, MACD, Bollinger %B/width, Stochastic, ADX, ATR, candle body/wick, streaks, time-of-day
 - `rules`: regime-aware vote (ADX switches trend-following vs mean-reversion weights) + hammer/engulfing patterns

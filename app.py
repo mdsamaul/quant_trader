@@ -13,6 +13,7 @@ import pandas as pd
 
 from engine import Engine
 from quotex_clicker import get_clicker, execute_click
+from quotex_vision import get_vision_tracker
 from signals import generate_signal
 from config import Config
 
@@ -35,10 +36,18 @@ class AutoClickConfigIn(BaseModel):
 
 
 class FeedConfigIn(BaseModel):
-    source: str = "ccxt"       # "ccxt" | "yf" | "replay"
+    source: str = "ccxt"       # "ccxt" | "yf" | "replay" | "quotex"
     symbol: str = "BTC/USDT"   # "BTC/USDT", "EURUSD=X", etc.
     timeframe: str = "1m"
     poll: int = 5
+
+
+class QuotexFeedIn(BaseModel):
+    source: str = "quotex"
+    asset: Optional[str] = "QUOTEX-CHART"
+    candles: list[dict[str, Any]] = []
+    current_price: Optional[float] = None
+    timestamp: Optional[int] = None
 
 
 class TestClickIn(BaseModel):
@@ -205,6 +214,48 @@ def update_candles(background_tasks: BackgroundTasks, candle_data: list[dict[str
         background_tasks.add_task(execute_click, action)
 
     return {"status": "ok", "signal": {"action": action, "confidence": conf, "reasons": reasons}}
+
+
+@app.post("/api/quotex/feed")
+def receive_quotex_feed(feed: QuotexFeedIn):
+    """Real-time candle receiver from Quotex Web Bridge userscript."""
+    res = engine.push_quotex_data(feed.candles, asset=feed.asset, current_price=feed.current_price)
+    return res
+
+
+@app.get("/api/quotex/connector.user.js")
+def get_connector_script():
+    """Serves the Quotex userscript directly so users can click to install or copy."""
+    return FileResponse("quotex_connector.user.js", media_type="text/javascript", filename="quotex_connector.user.js")
+
+
+@app.post("/api/quotex/vision/start")
+def start_vision():
+    """Start Quotex screen/chart vision tracker."""
+    tracker = get_vision_tracker()
+    tracker.callback = lambda result: setattr(engine, "vision_signal", result)
+    tracker.start()
+    return {"status": "ok", "message": "Quotex screen vision tracker started."}
+
+
+@app.post("/api/quotex/vision/stop")
+def stop_vision():
+    """Stop Quotex screen/chart vision tracker."""
+    tracker = get_vision_tracker()
+    tracker.stop()
+    engine.vision_signal = None
+    return {"status": "ok", "message": "Quotex screen vision tracker stopped."}
+
+
+@app.get("/api/quotex/vision/status")
+def get_vision_status():
+    """Check current vision tracker state."""
+    tracker = get_vision_tracker()
+    return {
+        "running": tracker.running,
+        "last_status": tracker.last_status,
+        "vision_signal": getattr(engine, "vision_signal", None),
+    }
 
 
 @app.post("/api/backtest/run")

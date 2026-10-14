@@ -101,10 +101,14 @@
     <div class="flex items-center gap-2 bg-dark-card border border-dark-border px-2 py-1.5 rounded-xl text-xs">
       <span class="text-gray-400 px-1"><i class="fa-solid fa-database mr-1"></i> Feed:</span>
       <select id="feedSourceSelect" onchange="changeFeed()" class="bg-dark-bg border border-dark-border text-white text-xs rounded-lg px-2.5 py-1 focus:outline-none focus:border-indigo-500">
+        <option value="quotex:LIVE">⚡ Quotex Real-Time Live Feed</option>
         <option value="ccxt:BTC/USDT">Binance BTC/USDT (1m)</option>
         <option value="yf:EURUSD=X">Yahoo EUR/USD (1m)</option>
         <option value="replay:DEMO">Synthetic Replay (Planted Edge)</option>
       </select>
+      <button onclick="openQuotexModal()" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition">
+        <i class="fa-solid fa-bolt text-indigo-400"></i> Quotex Connect
+      </button>
     </div>
 
     <!-- Status & Action Buttons -->
@@ -739,6 +743,175 @@
     // Poll every 2 seconds
     setInterval(syncState, 2000);
     syncState();
+
+    // ==========================================
+    // QUOTEX CONNECT & VISION MODAL
+    // ==========================================
+    function openQuotexModal() {
+      document.getElementById('quotexModal').classList.remove('hidden');
+      updateVisionStatus();
+    }
+
+    function closeQuotexModal() {
+      document.getElementById('quotexModal').classList.add('hidden');
+    }
+
+    function switchQuotexTab(tab) {
+      if (tab === 'web') {
+        document.getElementById('quotexTabWeb').classList.remove('hidden');
+        document.getElementById('quotexTabVision').classList.add('hidden');
+        document.getElementById('tabBtnWeb').className = 'px-4 py-2 text-xs font-bold rounded-lg bg-indigo-600 text-white shadow';
+        document.getElementById('tabBtnVision').className = 'px-4 py-2 text-xs font-bold rounded-lg bg-dark-bg text-gray-400 hover:text-white border border-dark-border';
+      } else {
+        document.getElementById('quotexTabWeb').classList.add('hidden');
+        document.getElementById('quotexTabVision').classList.remove('hidden');
+        document.getElementById('tabBtnVision').className = 'px-4 py-2 text-xs font-bold rounded-lg bg-indigo-600 text-white shadow';
+        document.getElementById('tabBtnWeb').className = 'px-4 py-2 text-xs font-bold rounded-lg bg-dark-bg text-gray-400 hover:text-white border border-dark-border';
+        updateVisionStatus();
+      }
+    }
+
+    async function copyConnectorScript() {
+      try {
+        const res = await fetch('/api/quotex/connector.user.js');
+        const code = await res.text();
+        await navigator.clipboard.writeText(code);
+        showToast('Quotex Bridge script copied to clipboard! Paste in Tampermonkey or Console.', 'success');
+      } catch (e) {
+        showToast('Error copying script: ' + e.message, 'error');
+      }
+    }
+
+    async function setQuotexLiveFeed() {
+      document.getElementById('feedSourceSelect').value = 'quotex:LIVE';
+      await changeFeed();
+      closeQuotexModal();
+    }
+
+    async function startVision() {
+      try {
+        const res = await fetch('/api/quotex/vision/start', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message, 'success');
+        updateVisionStatus();
+      } catch (e) {
+        showToast('Error starting vision: ' + e.message, 'error');
+      }
+    }
+
+    async function stopVision() {
+      try {
+        const res = await fetch('/api/quotex/vision/stop', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message, 'info');
+        updateVisionStatus();
+      } catch (e) {
+        showToast('Error stopping vision: ' + e.message, 'error');
+      }
+    }
+
+    async function updateVisionStatus() {
+      try {
+        const res = await fetch('/api/quotex/vision/status');
+        const data = await res.json();
+        const statEl = document.getElementById('visionStatusText');
+        const badgeEl = document.getElementById('visionRunningBadge');
+        if (data.running) {
+          badgeEl.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+          badgeEl.innerText = 'TRACKING ACTIVE';
+          statEl.innerHTML = `<span class="text-emerald-400 font-semibold">${data.last_status.window || 'Scanning...'}</span> (${data.last_status.resolution || 'Waiting frame'})`;
+        } else {
+          badgeEl.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-gray-700 text-gray-300';
+          badgeEl.innerText = 'STOPPED';
+          statEl.innerText = 'Vision tracker is offline. Click Start to begin screen analysis.';
+        }
+      } catch (e) {}
+    }
   </script>
+
+  <!-- QUOTEX INTEGRATION MODAL -->
+  <div id="quotexModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+    <div class="glass-panel w-full max-w-xl p-6 border border-indigo-500/30 shadow-2xl relative">
+      <!-- Close Button -->
+      <button onclick="closeQuotexModal()" class="absolute top-4 right-4 text-gray-400 hover:text-white text-lg">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+
+      <div class="flex items-center gap-3 mb-4">
+        <div class="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-lg font-bold">
+          <i class="fa-solid fa-bolt"></i>
+        </div>
+        <div>
+          <h2 class="text-base font-bold text-white">Quotex Real-Time Integration</h2>
+          <p class="text-xs text-gray-400">Sync live chart data & predictions directly with your Quotex account</p>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="flex gap-2 mb-4 border-b border-dark-border pb-3">
+        <button id="tabBtnWeb" onclick="switchQuotexTab('web')" class="px-4 py-2 text-xs font-bold rounded-lg bg-indigo-600 text-white shadow">
+          <i class="fa-solid fa-network-wired mr-1.5"></i> Web Bridge (Recommended: 0ms Latency)
+        </button>
+        <button id="tabBtnVision" onclick="switchQuotexTab('vision')" class="px-4 py-2 text-xs font-bold rounded-lg bg-dark-bg text-gray-400 hover:text-white border border-dark-border">
+          <i class="fa-solid fa-camera mr-1.5"></i> Screen Vision (OpenCV)
+        </button>
+      </div>
+
+      <!-- Tab 1: Web Bridge -->
+      <div id="quotexTabWeb">
+        <div class="bg-dark-bg p-3 rounded-xl border border-dark-border text-xs text-gray-300 mb-4 space-y-2">
+          <div class="font-semibold text-white flex items-center gap-1.5 text-indigo-400">
+            <i class="fa-solid fa-circle-check"></i> How it works:
+          </div>
+          <p class="text-[11px] leading-relaxed text-gray-400">
+            Quotex sends real-time ticks over WebSocket directly to your browser. The lightweight QuantTrader connector intercepts these exact 1-minute candles (including OTC pairs) and feeds them to our AI engine without any image processing lag.
+          </p>
+          <ol class="list-decimal list-inside text-[11px] space-y-1 text-gray-300 pt-1">
+            <li>Install <b class="text-white">Tampermonkey</b> extension in Chrome or Edge.</li>
+            <li>Click <b class="text-indigo-400">Download Script</b> or <b class="text-indigo-400">Copy Code</b> below and add it to Tampermonkey.</li>
+            <li>Open Quotex. A sleek <b class="text-white">QuantTrader AI</b> HUD will appear on your chart!</li>
+          </ol>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <a href="/api/quotex/connector.user.js" download="quotex_connector.user.js" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+            <i class="fa-solid fa-download"></i> Download Userscript
+          </a>
+          <button onclick="copyConnectorScript()" class="bg-dark-card hover:bg-dark-cardHover border border-dark-border text-gray-200 px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+            <i class="fa-solid fa-copy"></i> Copy Script Code
+          </button>
+          <button onclick="setQuotexLiveFeed()" class="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ml-auto">
+            <i class="fa-solid fa-play"></i> Switch Feed to Quotex
+          </button>
+        </div>
+      </div>
+
+      <!-- Tab 2: Screen Vision -->
+      <div id="quotexTabVision" class="hidden">
+        <div class="bg-dark-bg p-3 rounded-xl border border-dark-border text-xs text-gray-300 mb-4 space-y-2">
+          <div class="flex justify-between items-center">
+            <span class="font-semibold text-white">Vision Analyzer Status:</span>
+            <span id="visionRunningBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-700 text-gray-300">CHECKING</span>
+          </div>
+          <div id="visionStatusText" class="text-[11px] text-gray-400 font-mono py-1">
+            Checking status...
+          </div>
+          <p class="text-[11px] text-gray-400">
+            OpenCV scans the Quotex desktop window, analyzes candle color distribution (green dominance vs red dominance) and provides real-time visual confirmation to the AI engine.
+          </p>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button onclick="startVision()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+            <i class="fa-solid fa-play"></i> Start Screen Vision
+          </button>
+          <button onclick="stopVision()" class="bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+            <i class="fa-solid fa-stop"></i> Stop Vision
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
 </body>
 </html>
