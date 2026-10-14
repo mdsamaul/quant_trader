@@ -1,0 +1,5 @@
+__pycache__/
+models/
+data/
+paper_ledger.csv
+.env
