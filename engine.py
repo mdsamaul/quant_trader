@@ -20,7 +20,7 @@ class Engine:
         self.clicker = get_clicker()
         self.cfg = {
             "source": "quotex",
-            "symbol": "AUD/JPY",
+            "symbol": "EUR/USD",
             "timeframe": "1m",
             "poll": 5,
             "model": "models/model.joblib",
@@ -37,11 +37,11 @@ class Engine:
         self.feed_status = "idle"
         self.feed_error = None
         self._i = 0
+        self._last_traded_bar = None
         self.bundle = None
         if os.path.exists(self.cfg["model"]):
             try:
                 self.bundle = joblib.load(self.cfg["model"])
-                self.s["threshold"] = self.bundle.get("threshold", 0.55)
             except Exception:
                 pass
         self.reset()
@@ -51,6 +51,7 @@ class Engine:
         threading.Thread(target=self._stream_loop, daemon=True).start()
 
     def reset(self):
+        thr = self.bundle.get("threshold", 0.70) if getattr(self, "bundle", None) else 0.70
         self.s = {
             "status": "stopped",
             "last_bar": None,
@@ -64,7 +65,7 @@ class Engine:
             "trades_today": 0,
             "halted": False,
             "clicks": 0,
-            "threshold": self.bundle.get("threshold", 0.55) if getattr(self, "bundle", None) else 0.55,
+            "threshold": thr,
             "confluence": {"action": "WAIT", "confidence": 0.0, "reasons": []},
         }
         self.log = deque(maxlen=80)
@@ -134,21 +135,23 @@ class Engine:
     def _fetch(self):
         c = self.cfg
         if c["source"] == "quotex":
-            if not self._quotex_candles:
-                # Pre-seed with real market data if available for this symbol so chart is not empty
-                sym = c.get("symbol", "EUR/USD")
-                try:
-                    df_seed = D.fetch_yfinance("EURUSD=X", "1m", "1d")
-                    if not df_seed.empty:
-                        self._quotex_candles = [
-                            {"time": int(t.timestamp()), "open": float(r["open"]), "high": float(r["high"]), "low": float(r["low"]), "close": float(r["close"]), "volume": float(r["volume"])}
-                            for t, r in df_seed.tail(60).iterrows()
-                        ]
-                        return df_seed.tail(60)
-                except Exception:
-                    pass
-                return pd.DataFrame()
-            return D._norm(pd.DataFrame(self._quotex_candles))
+            if self._quotex_candles:
+                return D._norm(pd.DataFrame(self._quotex_candles))
+            # Pre-seed with real market data for the active symbol so chart and features match live market
+            sym = c.get("symbol", "EUR/USD")
+            clean_sym = sym.replace(" (OTC)", "").replace("/", "").strip().upper()
+            ticker = f"{clean_sym}=X" if not clean_sym.endswith("=X") else clean_sym
+            try:
+                df_seed = D.fetch_yfinance(ticker, "1m", "1d")
+                if not df_seed.empty:
+                    self._quotex_candles = [
+                        {"time": int(t.timestamp()), "open": float(r["open"]), "high": float(r["high"]), "low": float(r["low"]), "close": float(r["close"]), "volume": float(r["volume"])}
+                        for t, r in df_seed.tail(60).iterrows()
+                    ]
+                    return df_seed.tail(60)
+            except Exception:
+                pass
+            return pd.DataFrame()
         if c["source"] == "ccxt":
             try:
                 return D.fetch_ccxt(c["symbol"], c["timeframe"], 200)
@@ -233,6 +236,17 @@ class Engine:
         # Sync _quotex_candles
         self._quotex_candles = list(self.candles)
 
+        # Always settle active trade if 60 seconds (1-minute expiry) have elapsed
+        if self.s.get("open_trade"):
+            ot = self.s["open_trade"]
+            opened_at = ot.get("opened_at", 0)
+            now_sec = time.time()
+            if opened_at > 0 and (now_sec - opened_at) >= 60:
+                payout = float(self.bundle.get("payout", 0.85)) if getattr(self, "bundle", None) else 0.85
+                close_px = float(current_price) if (current_price and current_price > 0) else (self.candles[-1]["close"] if self.candles else ot["entry"])
+                self._settle(ot, pd.DataFrame([{"close": close_px}]), payout)
+                self.s["open_trade"] = None
+
         bundle = getattr(self, "bundle", None)
         mdl = bundle.get("model") if bundle else None
         thr = float(self.s.get("threshold") or (bundle.get("threshold", 0.58) if bundle else 0.58))
@@ -278,23 +292,49 @@ class Engine:
                     thr_pct = round(thr * 100, 1)
                     reasons.append(f"Neutral Chop (CALL: {call_pct}%, PUT: {put_pct}% < {thr_pct}% Target)")
 
+                # Settle active trade after 60 seconds (1-minute expiry)
+                if self.s.get("open_trade"):
+                    ot = self.s["open_trade"]
+                    opened_at = ot.get("opened_at", 0)
+                    now_sec = time.time()
+                    if opened_at > 0 and (now_sec - opened_at) >= 60:
+                        payout = float(self.bundle.get("payout", 0.85)) if getattr(self, "bundle", None) else 0.85
+                        self._settle(ot, df, payout)
+                        self.s["open_trade"] = None
+
                 # If open trade is in progress, note it
                 if self.s.get("open_trade"):
                     ot = self.s["open_trade"]
-                    reasons.append(f"Trade in progress: {ot.get('dir')} @ {ot.get('entry')}")
+                    rem_s = max(0, int(60 - (time.time() - ot.get("opened_at", time.time()))))
+                    reasons.append(f"Trade in progress: {ot.get('dir')} @ {ot.get('entry')} ({rem_s}s left)")
 
-                # If auto-click bot is running, execute trade
+                # 1-Minute Candle Timing Lock (2s - 3s entry window)
+                now_sec = time.time()
+                sec = int(now_sec) % 60
+                rem_sec = 60 - sec
+                timing_window_ok = (rem_sec <= 3 or sec <= 3)
+
+                # If auto-click bot is running, execute trade ONLY when candle timing window is active
                 if self.running and action in ["CALL", "PUT"] and self.s["open_trade"] is None:
                     bar = df.index[-1]
                     prob = ml_prob if ml_prob is not None else (0.75 if action == "CALL" else 0.25)
-                    if (action == "CALL" and prob >= thr) or (action == "PUT" and prob <= 1.0 - thr):
-                        self._open(prob, thr, df, bar)
+                    signal_ready = (action == "CALL" and prob >= thr) or (action == "PUT" and prob <= 1.0 - thr)
+                    if signal_ready:
+                        if timing_window_ok:
+                            self._open(prob, thr, df, bar)
+                        else:
+                            reasons.append(f"⏱ Timing Lock: Waiting for 2s-3s candle window ({rem_sec}s left)")
             except Exception as e:
                 pass
         else:
             reasons.append(f"Collecting candles ({len(self.candles)}/5 minimum)")
 
+        trigger_click = self.s.pop("just_triggered_trade", None)
         self._data_event.set()
+        now_s = int(time.time())
+        sec = now_s % 60
+        rem_sec = 60 - sec
+        timing_window_ok = (rem_sec <= 3 or sec <= 3)
         return {
             "status": "ok",
             "candles_count": len(self.candles),
@@ -304,9 +344,13 @@ class Engine:
                 "reasons": reasons,
                 "ml_prob": ml_prob,
                 "threshold": thr,
+                "candle_sec": sec,
+                "candle_rem_sec": rem_sec,
+                "candle_timing_ok": timing_window_ok,
             },
             "bot_running": self.running,
             "open_trade": self.s["open_trade"],
+            "trigger_click": trigger_click,
         }
 
     def _update_candles(self, df: pd.DataFrame):
@@ -442,14 +486,31 @@ class Engine:
                 time.sleep(0.15 if self.cfg["source"] == "replay" else float(self.cfg["poll"]))
 
     def _open(self, p, thr, df, bar):
+        # Prevent opening multiple trades on the exact same candle
+        bar_key = str(bar)
+        if bar_key == str(getattr(self, "_last_traded_bar", None)):
+            return None
+
+        # Candle Timing Filter:
+        # Enter 1M trades only when candle life is in the 2s - 3s boundary (rem_sec <= 3 or sec <= 3)
+        now_sec = time.time()
+        sec = int(now_sec) % 60
+        rem_sec = 60 - sec
+        if not (rem_sec <= 3 or sec <= 3):
+            return None
+
         direction = "CALL" if p >= thr else "PUT"
         self.s["last_signal"] = direction
+        self._last_traded_bar = bar_key
+        now_sec = time.time()
         trade = {
+            "symbol": self.cfg.get("symbol", "EUR/USD"),
             "dir": direction,
             "entry": float(df["close"].iloc[-1]),
             "prob": p,
             "bars": 0,
             "time": str(bar),
+            "opened_at": now_sec,
         }
         self.s["open_trade"] = trade
         self.s["trades_today"] += 1
@@ -461,11 +522,24 @@ class Engine:
         else:
             clicked = self.clicker.execute_click(direction)
             self.s["clicks"] += int(clicked)
+
+        # Only prompt browser bridge to click if python autoclicker did not handle it
+        if not clicked:
+            self.s["just_triggered_trade"] = direction
+
         self._say(f"SIGNAL {direction} p={p:.3f} entry={trade['entry']:.5f}" + (" [CLICKED]" if clicked else ""))
         return trade
 
     def _settle(self, trade, df, payout):
         close = float(df["close"].iloc[-1])
+        entry = float(trade["entry"])
+
+        # Sanity check: prevent cross-symbol contamination (e.g. BTC 80k vs EUR 1.11)
+        if entry > 0 and (close / entry > 3.0 or close / entry < 0.33):
+            self._say(f"Warning: Discarding corrupted settlement (entry={entry}, close={close}). Mismatched market feed.")
+            self.s["open_trade"] = None
+            return None
+
         tie = close == trade["entry"]
         win = (close > trade["entry"]) if trade["dir"] == "CALL" else (close < trade["entry"])
         res = "TIE" if tie else ("WIN" if win else "LOSS")

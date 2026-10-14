@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         QuantTrader Quotex Live Bridge & AI Predictor
 // @namespace    http://localhost:8000/
-// @version      3.0
+// @version      3.1
 // @description  Stream real-time Quotex ticks & candles to QuantTrader AI terminal & display predictions directly on Quotex chart.
 // @author       QuantTrader
 // @match        *://market-qx.info/*
@@ -33,7 +33,7 @@
 
     const API_URL = "http://127.0.0.1:8000/api/quotex/feed";
     let isConnected = false;
-    let currentAsset = "AUD/JPY";
+    let currentAsset = "EUR/USD";
     let activeCandles = [];
     let currentBar = null;
     let autoTradeInBrowser = false;
@@ -70,6 +70,7 @@
                 </div>
                 <div id="qt-target" style="font-size:10px;color:#818cf8;margin-top:3px;font-family:monospace;">Target: ≥58%</div>
                 <div id="qt-price" style="font-size:10px;color:#94a3b8;margin-top:2px;font-family:monospace;">Price: --</div>
+                <div id="qt-timer" style="font-size:10px;color:#f59e0b;margin-top:2px;font-family:monospace;font-weight:700;">Candle: -- (Wait 2-3s)</div>
             </div>
             <div id="qt-reasons" style="font-size:10px;color:#64748b;max-height:45px;overflow-y:auto;margin-bottom:8px;line-height:1.3;">
                 Connecting to QuantTrader AI terminal...
@@ -133,8 +134,20 @@
         const putProbEl = document.getElementById("qt-put-prob");
         const targetEl = document.getElementById("qt-target");
         const priceEl = document.getElementById("qt-price");
+        const timerEl = document.getElementById("qt-timer");
         const reasonsEl = document.getElementById("qt-reasons");
         const assetEl = document.getElementById("qt-asset");
+
+        const sec = new Date().getSeconds();
+        const remSec = 60 - sec;
+        const timingActive = (remSec <= 3 || sec <= 3);
+        if (timerEl) {
+            if (timingActive) {
+                timerEl.innerHTML = `<span style="color:#10b981;font-weight:800;">⚡ ENTRY ACTIVE (${remSec <= 3 ? remSec + 's left' : sec + 's new'})</span>`;
+            } else {
+                timerEl.innerHTML = `<span style="color:#94a3b8;">Candle: ${remSec}s left (Wait 2s-3s)</span>`;
+            }
+        }
 
         if (dot) {
             dot.style.background = status ? "#10b981" : "#ef4444";
@@ -231,8 +244,11 @@
                         res.signal.threshold,
                         res.open_trade
                     );
-                    if (autoTradeInBrowser && !res.open_trade && (res.signal.action === "CALL" || res.signal.action === "PUT")) {
-                        checkAndClickDOM(res.signal.action, res.signal.confidence);
+                    if (res.trigger_click && autoTradeInBrowser) {
+                        console.log(`%c[QuantTrader AI]%c Direct ${res.trigger_click} trade signal received! Triggering in Quotex...`, "background: #6366f1; color: white;", "");
+                        checkAndClickDOM(res.trigger_click);
+                    } else if (autoTradeInBrowser && !res.open_trade && (res.signal.action === "CALL" || res.signal.action === "PUT")) {
+                        checkAndClickDOM(res.signal.action);
                     }
                 }
             } catch (e) {
@@ -271,30 +287,38 @@
         }
     }
 
-    function checkAndClickDOM(direction, confidence) {
+    function checkAndClickDOM(direction, force = false) {
         const now = Date.now();
-        if (now - lastClickTime < 3000) return;
-        if (confidence < 0.55) return;
+        if (now - lastClickTime < 2000) return;
+
+        // Strict 2s - 3s Candle Timing Lock (User requirement)
+        const sec = new Date().getSeconds();
+        const remSec = 60 - sec;
+        const isTiming = (remSec <= 3 || sec <= 3);
+        if (!isTiming && !force) {
+            console.log(`[QuantTrader Auto-Click] Entry blocked: Waiting for 2s-3s candle timing (${remSec}s remaining)`);
+            return;
+        }
 
         let btn = null;
         if (direction === "CALL") {
-            btn = document.querySelector(".btn-call, [data-qa='deal-call'], .call-btn, .button-up, button.call, .button--success");
+            btn = document.querySelector(".button--success, .btn-call, [data-qa='deal-call'], .call-btn, .button-up, button.call");
             if (!btn) {
-                const buttons = document.querySelectorAll("button, .btn, div[role='button']");
+                const buttons = document.querySelectorAll("button, .btn, div[role='button'], a[role='button']");
                 for (const b of buttons) {
                     const txt = (b.innerText || "").trim().toLowerCase();
-                    if (txt === "buy" || txt === "call" || txt === "up" || txt.startsWith("buy\n")) {
+                    if (txt === "buy" || txt === "call" || txt === "up" || txt.startsWith("buy\n") || txt.startsWith("buy ")) {
                         btn = b; break;
                     }
                 }
             }
         } else if (direction === "PUT") {
-            btn = document.querySelector(".btn-put, [data-qa='deal-put'], .put-btn, .button-down, button.put, .button--danger");
+            btn = document.querySelector(".button--danger, .btn-put, [data-qa='deal-put'], .put-btn, .button-down, button.put");
             if (!btn) {
-                const buttons = document.querySelectorAll("button, .btn, div[role='button']");
+                const buttons = document.querySelectorAll("button, .btn, div[role='button'], a[role='button']");
                 for (const b of buttons) {
                     const txt = (b.innerText || "").trim().toLowerCase();
-                    if (txt === "sell" || txt === "put" || txt === "down" || txt.startsWith("sell\n")) {
+                    if (txt === "sell" || txt === "put" || txt === "down" || txt.startsWith("sell\n") || txt.startsWith("sell ")) {
                         btn = b; break;
                     }
                 }
@@ -303,8 +327,15 @@
 
         if (btn) {
             btn.click();
+            try {
+                btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+                btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+                btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+            } catch (err) {}
             lastClickTime = now;
-            console.log(`%c[QuantTrader Auto-Click]%c ${direction} clicked via DOM at price ${lastRecordedPrice}!`, "background: #10b981; color: white;", "");
+            console.log(`%c[QuantTrader Auto-Click]%c ${direction} clicked via DOM at price ${lastRecordedPrice}!`, "background: #10b981; color: white; font-weight: bold; padding: 4px 8px; border-radius: 4px;", "");
+        } else {
+            console.warn(`[QuantTrader Auto-Click] Could not locate ${direction} button in Quotex DOM`);
         }
     }
 
@@ -348,83 +379,106 @@
     }
 
     // -------------------------------------------------------------
-    // 4. ROBUST DOM TICK & ASSET SCANNER
+    // 4. BULLETPROOF DOM ASSET & PRICE SCANNER
     // -------------------------------------------------------------
+    const KNOWN_CURRENCIES = ["EUR", "USD", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD", "BDT", "INR", "BRL", "BTC", "ETH", "USDT"];
+
+    function detectActiveAsset() {
+        // Priority 1: Right trading deal sidebar (always has the current active asset selector!)
+        const sidebar = document.querySelector(".section-deal, [class*='sidebar'], aside, [class*='deal-form'], [class*='sidebar__asset']");
+        if (sidebar) {
+            const m = sidebar.innerText.match(/\b([A-Za-z]{3})\s*\/\s*([A-Za-z]{3})(?:\s*\(?(OTC)\)?)?\b/i);
+            if (m) {
+                const b = m[1].toUpperCase(), q = m[2].toUpperCase();
+                if (KNOWN_CURRENCIES.includes(b) && KNOWN_CURRENCIES.includes(q)) {
+                    return `${b}/${q}${m[3] ? ' (OTC)' : ''}`;
+                }
+            }
+        }
+
+        // Priority 2: Active Tab (top-left)
+        const tabs = document.querySelectorAll(".tabs__item--active, .tab--active, .tab.active, [class*='tab'][class*='active'], [class*='tab-item--active']");
+        for (const t of tabs) {
+            if (t.closest("#quant-trader-hud")) continue;
+            const m = (t.innerText || "").match(/\b([A-Za-z]{3})\s*\/\s*([A-Za-z]{3})(?:\s*\(?(OTC)\)?)?\b/i);
+            if (m) {
+                const b = m[1].toUpperCase(), q = m[2].toUpperCase();
+                if (KNOWN_CURRENCIES.includes(b) && KNOWN_CURRENCIES.includes(q)) {
+                    return `${b}/${q}${m[3] ? ' (OTC)' : ''}`;
+                }
+            }
+        }
+
+        // Priority 3: Any leaf node button or div that contains a pair name (e.g. "EUR/JPY\n82%")
+        const allNodes = document.querySelectorAll("button, div, span, a");
+        for (const el of allNodes) {
+            if (el.closest("#quant-trader-hud")) continue;
+            if (el.children.length > 3) continue;
+            const txt = (el.innerText || "").trim();
+            const m = txt.match(/^([A-Za-z]{3})\s*\/\s*([A-Za-z]{3})(?:\s*\(?(OTC)\)?)?(?:\s*\d+%)?$/i);
+            if (m) {
+                const b = m[1].toUpperCase(), q = m[2].toUpperCase();
+                if (KNOWN_CURRENCIES.includes(b) && KNOWN_CURRENCIES.includes(q)) {
+                    return `${b}/${q}${m[3] ? ' (OTC)' : ''}`;
+                }
+            }
+        }
+
+        // Priority 4: Fallback match anywhere on page
+        for (const el of allNodes) {
+            if (el.closest("#quant-trader-hud")) continue;
+            if (el.children.length > 2) continue;
+            const txt = (el.innerText || "").trim();
+            const m = txt.match(/\b([A-Za-z]{3})\s*\/\s*([A-Za-z]{3})(?:\s*\(?(OTC)\)?)?\b/i);
+            if (m) {
+                const b = m[1].toUpperCase(), q = m[2].toUpperCase();
+                if (KNOWN_CURRENCIES.includes(b) && KNOWN_CURRENCIES.includes(q)) {
+                    return `${b}/${q}${m[3] ? ' (OTC)' : ''}`;
+                }
+            }
+        }
+        return null;
+    }
+
+    function detectPrice() {
+        // Priority 1: Chart OHLC status bar (bottom-left of chart: "Open: 176.617 Close: 176.619 ...")
+        const allDivs = document.querySelectorAll("div, span, p");
+        for (const el of allDivs) {
+            if (el.closest("#quant-trader-hud")) continue;
+            if (el.children.length > 5) continue;
+            const txt = el.innerText || "";
+            if (txt.includes("Close:") || txt.includes("Open:")) {
+                const m = txt.match(/Close:\s*([0-9.]+)/i) || txt.match(/Open:\s*([0-9.]+)/i);
+                if (m && m[1]) {
+                    const p = parseFloat(m[1]);
+                    if (!isNaN(p) && p > 0) return p;
+                }
+            }
+        }
+
+        // Priority 2: Price tags on right scale / axis
+        const priceEls = document.querySelectorAll("[class*='quote'], [class*='price'], [class*='rate'], [class*='value'], [class*='current']");
+        for (const el of priceEls) {
+            if (el.closest("#quant-trader-hud")) continue;
+            if (el.children.length > 1) continue;
+            const txt = (el.innerText || "").trim().replace(/[^0-9.]/g, '');
+            if (/^[0-9]{1,6}\.[0-9]{2,6}$/.test(txt)) {
+                const p = parseFloat(txt);
+                if (!isNaN(p) && p > 0.0001 && p < 1000000) return p;
+            }
+        }
+        return null;
+    }
+
     function scanQuotexDOM() {
-        // 1. Detect active asset name (e.g. AUD/JPY, USD/JPY, EUR/USD, EUR/USD (OTC))
-        let foundAsset = null;
-        const pairRegex = /\b([A-Z]{3}\/[A-Z]{3}(?:\s*\(OTC\))?)\b/i;
-
-        // Method A: Active tab
-        const activeTabs = document.querySelectorAll(".tabs__item--active, .tab--active, .tab.active, [class*='tab'][class*='active'], [class*='tab-item--active']");
-        for (const t of activeTabs) {
-            const m = (t.innerText || "").match(pairRegex);
-            if (m && m[1]) {
-                foundAsset = m[1].toUpperCase();
-                break;
-            }
+        const foundAsset = detectActiveAsset();
+        if (foundAsset && foundAsset !== currentAsset) {
+            currentAsset = foundAsset;
+            console.log("%c[QuantTrader] Active Asset Synced to:%c " + currentAsset, "background:#6366f1;color:white;font-weight:bold;padding:2px 6px;border-radius:4px;", "");
         }
 
-        // Method B: Right deal/trade sidebar
-        if (!foundAsset) {
-            const dealForms = document.querySelectorAll(".section-deal, [class*='deal-form'], [class*='sidebar__asset'], [class*='asset-select'], [data-qa='asset-name'], [class*='current-symbol']");
-            for (const df of dealForms) {
-                const m = (df.innerText || "").match(pairRegex);
-                if (m && m[1]) {
-                    foundAsset = m[1].toUpperCase();
-                    break;
-                }
-            }
-        }
-
-        // Method C: Any header or tabs container
-        if (!foundAsset) {
-            const headers = document.querySelectorAll(".header-chart, header, .tabs, [class*='tabs']");
-            for (const h of headers) {
-                const m = (h.innerText || "").match(pairRegex);
-                if (m && m[1]) {
-                    foundAsset = m[1].toUpperCase();
-                    break;
-                }
-            }
-        }
-
-        if (foundAsset) {
-            const clean = foundAsset.trim();
-            if (clean && clean !== currentAsset) {
-                currentAsset = clean;
-                console.log("[QuantTrader] Switched Active Asset to:", currentAsset);
-            }
-        }
-
-        // 2. Check "PAIR INFORMATION: 1.11921" or direct price elements
-        const allSpans = document.querySelectorAll("span, div, p");
-        let foundPrice = null;
-
-        for (const el of allSpans) {
-            if (el.innerText && el.innerText.includes("PAIR INFORMATION:")) {
-                const match = el.innerText.match(/PAIR INFORMATION:\s*([0-9.]+)/i);
-                if (match && match[1]) {
-                    foundPrice = parseFloat(match[1]);
-                    break;
-                }
-            }
-        }
-
-        // 3. Fallback: Check right price axis bubble or current-quote
-        if (!foundPrice) {
-            const quoteEls = document.querySelectorAll(".deal-form__current-quote, .current-price, .chart-quote, .section-deal__rate, [data-qa='current-quote'], [class*='current-quote'], [class*='price-current'], [class*='rate-value']");
-            for (const el of quoteEls) {
-                const txt = el.innerText ? el.innerText.replace(/[^0-9.]/g, '') : "";
-                const num = parseFloat(txt);
-                if (!isNaN(num) && num > 0) {
-                    foundPrice = num;
-                    break;
-                }
-            }
-        }
-
-        if (foundPrice && !isNaN(foundPrice)) {
+        const foundPrice = detectPrice();
+        if (foundPrice && !isNaN(foundPrice) && foundPrice > 0) {
             addTick(foundPrice);
         }
     }

@@ -46,8 +46,8 @@ class AutoClickConfigIn(BaseModel):
 
 
 class FeedConfigIn(BaseModel):
-    source: str = "ccxt"       # "ccxt" | "yf" | "replay" | "quotex"
-    symbol: str = "BTC/USDT"   # "BTC/USDT", "EURUSD=X", etc.
+    source: str = "quotex"     # "quotex" | "yf" | "ccxt" | "replay"
+    symbol: str = "EUR/USD"    # "EUR/USD", "AUD/JPY", etc.
     timeframe: str = "1m"
     poll: int = 5
 
@@ -165,7 +165,7 @@ def get_state():
         else:
             reasons.insert(0, f"ML Model: CALL {call_prob}% | PUT {put_prob}% (Target: ≥ {thr*100:.0f}%)")
 
-    active_mkt = snap["cfg"].get("symbol", "AUD/JPY")
+    active_mkt = snap["cfg"].get("symbol", "EUR/USD")
     clean_key = active_mkt.replace(" (OTC)", "").strip().upper()
     cur_info = CURRENCY_INFO.get(clean_key, {
         "full_name": f"{active_mkt} Currency Pair",
@@ -176,6 +176,11 @@ def get_state():
         "verification": f"Your active Quotex market is {active_mkt}.",
     })
     curr_px = float(snap["candles"][-1]["close"]) if snap.get("candles") else None
+    now_ts = int(time.time())
+    sec = now_ts % 60
+    rem_sec = 60 - sec
+    timing_active = (rem_sec <= 3 or sec <= 3)
+
     return {
         "symbol": active_mkt,
         "source": snap["cfg"].get("source", "quotex"),
@@ -210,6 +215,9 @@ def get_state():
             "dominant_dir": dominant_dir,
             "threshold": thr,
             "confluence_confidence": confluence.get("confidence", 0.0),
+            "candle_sec": sec,
+            "candle_rem_sec": rem_sec,
+            "candle_timing_active": timing_active,
         },
         "session": {
             "trades": st.get("n", 0),
@@ -278,7 +286,14 @@ def update_feed(conf: FeedConfigIn):
     was_running = engine.running
     if was_running:
         engine.stop()
-    engine.cfg.update(conf.model_dump())
+    d = conf.model_dump()
+    if d.get("symbol") == "LIVE" or not d.get("symbol"):
+        d["symbol"] = engine.cfg.get("symbol", "EUR/JPY")
+    engine.cfg.update(d)
+    engine.candles = []
+    engine._quotex_candles = []
+    engine.s["active_market"] = engine.cfg["symbol"]
+    engine.s["analyzing_asset"] = engine.cfg["symbol"]
     if was_running:
         engine.start()
     else:

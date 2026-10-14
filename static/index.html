@@ -101,9 +101,14 @@
     <div class="flex items-center gap-2 bg-dark-card border border-dark-border px-2 py-1.5 rounded-xl text-xs">
       <span class="text-gray-400 px-1"><i class="fa-solid fa-database mr-1"></i> Feed:</span>
       <select id="feedSourceSelect" onchange="changeFeed()" class="bg-dark-bg border border-dark-border text-white text-xs rounded-lg px-2.5 py-1 focus:outline-none focus:border-indigo-500">
-        <option value="quotex:LIVE">⚡ Quotex Real-Time Live Feed</option>
-        <option value="ccxt:BTC/USDT">Binance BTC/USDT (1m)</option>
+        <option value="quotex:LIVE">⚡ Quotex Real-Time Live Feed (Auto)</option>
+        <option value="quotex:EUR/JPY">Quotex: EUR/JPY</option>
+        <option value="quotex:EUR/USD">Quotex: EUR/USD</option>
+        <option value="quotex:AUD/JPY">Quotex: AUD/JPY</option>
+        <option value="quotex:USD/JPY">Quotex: USD/JPY</option>
+        <option value="quotex:GBP/USD">Quotex: GBP/USD</option>
         <option value="yf:EURUSD=X">Yahoo EUR/USD (1m)</option>
+        <option value="ccxt:BTC/USDT">Binance BTC/USDT (1m)</option>
         <option value="replay:DEMO">Synthetic Replay (Planted Edge)</option>
       </select>
       <button onclick="openQuotexModal()" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition">
@@ -195,8 +200,15 @@
         </div>
       </div>
       <!-- Confidence Bar -->
-      <div class="w-full bg-dark-bg h-1.5 rounded-full overflow-hidden">
+      <div class="w-full bg-dark-bg h-1.5 rounded-full overflow-hidden mb-2">
         <div id="confidenceBar" class="bg-indigo-500 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+      </div>
+
+      <!-- 1M Candle Timer Indicator -->
+      <div class="text-[11px] flex items-center justify-between font-mono px-2.5 py-1.5 rounded-lg bg-dark-bg/80 border border-dark-border">
+        <span class="text-gray-400 flex items-center gap-1.5"><i class="fa-regular fa-clock text-indigo-400"></i> Candle:</span>
+        <span id="candleTimerDisplay" class="font-bold text-amber-400">00:00</span>
+        <span id="candleTimingBadge" class="text-[10px] px-2 py-0.5 rounded font-bold bg-amber-500/10 text-amber-300 border border-amber-500/20">WAIT (2s-3s)</span>
       </div>
     </div>
 
@@ -511,7 +523,10 @@
     // Change Data Feed
     async function changeFeed() {
       const val = document.getElementById('feedSourceSelect').value;
-      const [source, symbol] = val.split(':');
+      let [source, symbol] = val.split(':');
+      if (symbol === 'LIVE' || !symbol) {
+        symbol = (document.getElementById('navMarketDisplay')?.innerText || '').replace(/[^A-Za-z\/]/g, '').trim() || 'EUR/JPY';
+      }
       try {
         const res = await fetch('/api/config/feed', {
           method: 'POST',
@@ -771,6 +786,24 @@
             badge.className = 'text-2xl font-black text-amber-400 tracking-wider';
             icon.innerHTML = '<i class="fa-solid fa-hourglass-half text-amber-400"></i>';
             confBar.className = 'bg-amber-500 h-full rounded-full transition-all duration-500';
+          }
+
+          // 1M Candle Timer Update (2s - 3s entry window)
+          const candleTimerEl = document.getElementById('candleTimerDisplay');
+          const candleTimingBadge = document.getElementById('candleTimingBadge');
+          const remSec = sig.candle_rem_sec !== undefined ? sig.candle_rem_sec : (60 - (Math.floor(Date.now() / 1000) % 60));
+          const timingOk = sig.candle_timing_active !== undefined ? sig.candle_timing_active : (remSec <= 3 || remSec >= 57);
+          if (candleTimerEl) {
+            candleTimerEl.innerText = `00:${remSec < 10 ? '0' + remSec : remSec}`;
+          }
+          if (candleTimingBadge) {
+            if (timingOk) {
+              candleTimingBadge.className = 'text-[10px] px-2 py-0.5 rounded font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse';
+              candleTimingBadge.innerText = '⚡ ENTRY ACTIVE (2s-3s)';
+            } else {
+              candleTimingBadge.className = 'text-[10px] px-2 py-0.5 rounded font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20';
+              candleTimingBadge.innerText = `WAIT (${remSec}s left)`;
+            }
           }
 
           // Confluence list
