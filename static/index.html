@@ -151,12 +151,21 @@
     <!-- Card 2: Live Confluence Signal -->
     <div class="glass-panel p-4 flex flex-col justify-between relative overflow-hidden group hover:border-indigo-500/40 transition">
       <div class="flex justify-between items-start">
-        <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">Live Signal</span>
-        <span id="signalConfidencePill" class="text-xs font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-300">--%</span>
+        <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">Live Signal & Prob</span>
+        <div class="flex items-center gap-1.5">
+          <span class="text-[10px] text-gray-400 font-mono">PROB:</span>
+          <span id="signalConfidencePill" class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">--%</span>
+        </div>
       </div>
-      <div class="my-2 flex items-center gap-3">
-        <div id="signalBadge" class="text-2xl font-black text-amber-400 tracking-wider">WAIT</div>
-        <div id="signalDirectionIcon" class="text-xl text-gray-500"><i class="fa-solid fa-hourglass-half"></i></div>
+      <div class="my-1.5 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div id="signalBadge" class="text-2xl font-black text-amber-400 tracking-wider">WAIT</div>
+          <div id="signalDirectionIcon" class="text-xl text-gray-500"><i class="fa-solid fa-hourglass-half"></i></div>
+        </div>
+        <div class="text-right text-[11px] font-mono text-gray-400">
+          <div>ML Prob: <span id="mlProbDisplay" class="text-white font-semibold">--</span></div>
+          <div>Target: <span id="targetProbDisplay" class="text-indigo-400 font-semibold">≥62%</span></div>
+        </div>
       </div>
       <!-- Confidence Bar -->
       <div class="w-full bg-dark-bg h-1.5 rounded-full overflow-hidden">
@@ -263,13 +272,13 @@
             <button onclick="scanWindow()" id="scanBtn" class="bg-dark-bg hover:bg-dark-card border border-dark-border text-gray-300 hover:text-white py-1.5 rounded-lg text-[11px] font-medium transition flex items-center justify-center gap-1.5">
               <i class="fa-solid fa-camera text-indigo-400"></i> Auto-Scan
             </button>
-            <button onclick="grabCursor('CALL')" class="bg-dark-bg hover:bg-dark-card border border-dark-border text-gray-300 hover:text-white py-1.5 rounded-lg text-[11px] font-medium transition flex items-center justify-center gap-1.5" title="Hover mouse over CALL button within 3 seconds">
-              <i class="fa-solid fa-hand-pointer text-indigo-400"></i> Hover CALL (3s)
+            <button onclick="grabCursor('CALL')" id="hoverCallBtn" class="bg-dark-bg hover:bg-dark-card border border-dark-border text-gray-300 hover:text-white py-1.5 rounded-lg text-[11px] font-medium transition flex items-center justify-center gap-1.5" title="Hover mouse over CALL button within 3 seconds">
+              <i class="fa-solid fa-hand-pointer text-indigo-400"></i> <span id="hoverCallText">Hover CALL (3s)</span>
             </button>
           </div>
           <div class="grid grid-cols-2 gap-2">
-            <button onclick="grabCursor('PUT')" class="bg-dark-bg hover:bg-dark-card border border-dark-border text-gray-300 hover:text-white py-1.5 rounded-lg text-[11px] font-medium transition flex items-center justify-center gap-1.5" title="Hover mouse over PUT button within 3 seconds">
-              <i class="fa-solid fa-hand-pointer text-rose-400"></i> Hover PUT (3s)
+            <button onclick="grabCursor('PUT')" id="hoverPutBtn" class="bg-dark-bg hover:bg-dark-card border border-dark-border text-gray-300 hover:text-white py-1.5 rounded-lg text-[11px] font-medium transition flex items-center justify-center gap-1.5" title="Hover mouse over PUT button within 3 seconds">
+              <i class="fa-solid fa-hand-pointer text-rose-400"></i> <span id="hoverPutText">Hover PUT (3s)</span>
             </button>
             <button onclick="saveAutoclickConfig()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-1.5 rounded-lg transition text-[11px] flex items-center justify-center gap-1.5">
               <i class="fa-solid fa-floppy-disk"></i> Save Settings
@@ -535,26 +544,54 @@
     }
 
     async function grabCursor(direction) {
-      showToast(`Position mouse cursor over ${direction} button within 3 seconds!`, 'info');
+      const isCall = direction.toUpperCase() === 'CALL';
+      const btn = document.getElementById(isCall ? 'hoverCallBtn' : 'hoverPutBtn');
+      const textEl = document.getElementById(isCall ? 'hoverCallText' : 'hoverPutText');
+      const origText = isCall ? 'Hover CALL (3s)' : 'Hover PUT (3s)';
+
+      showToast(`Position mouse cursor over Quotex ${direction} button now! (3s countdown)`, 'info');
+
+      let count = 3;
+      if (btn) btn.disabled = true;
+      if (textEl) textEl.innerText = `Hover: ${count}s...`;
+
+      const timer = setInterval(() => {
+        count--;
+        if (count > 0) {
+          if (textEl) textEl.innerText = `Hover: ${count}s...`;
+        } else {
+          if (textEl) textEl.innerText = `Capturing...`;
+          clearInterval(timer);
+        }
+      }, 1000);
+
       try {
-        await fetch('/api/click/grab', {
+        const res = await fetch('/api/click/grab', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ direction, delay: 3 })
         });
-        setTimeout(async () => {
-          const res = await fetch('/api/state');
-          const data = await res.json();
-          if (data.autoclick) {
-            document.getElementById('callX').value = data.autoclick.call_x || 0;
-            document.getElementById('callY').value = data.autoclick.call_y || 0;
-            document.getElementById('putX').value = data.autoclick.put_x || 0;
-            document.getElementById('putY').value = data.autoclick.put_y || 0;
-            showToast(`${direction} coordinates captured!`, 'success');
+        clearInterval(timer);
+        const data = await res.json();
+
+        if (data.success && (data.x > 0 || data.y > 0)) {
+          if (isCall) {
+            document.getElementById('callX').value = data.x;
+            document.getElementById('callY').value = data.y;
+          } else {
+            document.getElementById('putX').value = data.x;
+            document.getElementById('putY').value = data.y;
           }
-        }, 3600);
+          showToast(`${direction} coordinates captured: (${data.x}, ${data.y})!`, 'success');
+        } else {
+          showToast(`Capture failed: ${data.error || 'Mouse at (0,0)'}`, 'error');
+        }
       } catch (e) {
+        clearInterval(timer);
         showToast('Grab error: ' + e.message, 'error');
+      } finally {
+        if (btn) btn.disabled = false;
+        if (textEl) textEl.innerText = origText;
       }
     }
 
@@ -624,36 +661,52 @@
           const icon = document.getElementById('signalDirectionIcon');
           const confBar = document.getElementById('confidenceBar');
           const confPill = document.getElementById('signalConfidencePill');
+          const mlDisplay = document.getElementById('mlProbDisplay');
+          const targetDisplay = document.getElementById('targetProbDisplay');
 
           badge.innerText = sig.action;
           const confPct = Math.round((sig.confidence || 0) * 100);
-          confPill.innerText = `${confPct}%`;
-          confBar.style.width = `${Math.min(confPct, 100)}%`;
+          const mlPct = (sig.ml_prob !== null && sig.ml_prob !== undefined) ? (sig.ml_prob * 100).toFixed(1) : null;
+          const thrPct = sig.threshold ? Math.round(sig.threshold * 100) : 62;
+
+          confPill.innerText = mlPct !== null ? `${mlPct}%` : `${confPct}%`;
+          if (mlDisplay) mlDisplay.innerText = mlPct !== null ? `${mlPct}%` : `${confPct}%`;
+          if (targetDisplay) targetDisplay.innerText = `≥${thrPct}%`;
+
+          const barPct = mlPct !== null ? parseFloat(mlPct) : confPct;
+          confBar.style.width = `${Math.min(Math.max(barPct, 0), 100)}%`;
 
           if (sig.action === 'CALL') {
             badge.className = 'text-2xl font-black text-emerald-400 tracking-wider';
             icon.innerHTML = '<i class="fa-solid fa-arrow-trend-up text-emerald-400"></i>';
             confBar.className = 'bg-emerald-500 h-full rounded-full transition-all duration-500';
+            confPill.className = 'text-xs font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
           } else if (sig.action === 'PUT') {
             badge.className = 'text-2xl font-black text-rose-400 tracking-wider';
             icon.innerHTML = '<i class="fa-solid fa-arrow-trend-down text-rose-400"></i>';
             confBar.className = 'bg-rose-500 h-full rounded-full transition-all duration-500';
+            confPill.className = 'text-xs font-mono font-bold px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30';
           } else {
             badge.className = 'text-2xl font-black text-amber-400 tracking-wider';
             icon.innerHTML = '<i class="fa-solid fa-hourglass-half text-amber-400"></i>';
             confBar.className = 'bg-amber-500 h-full rounded-full transition-all duration-500';
+            confPill.className = 'text-xs font-mono font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30';
           }
 
           // Confluence list
           const reasonsList = document.getElementById('confluenceList');
           document.getElementById('reasonsCount').innerText = `${sig.reasons.length} active`;
           if (sig.reasons && sig.reasons.length) {
-            reasonsList.innerHTML = sig.reasons.map(r => `
-              <div class="flex items-center gap-2 p-1.5 rounded bg-dark-bg/60 border border-dark-border/40">
-                <i class="fa-solid fa-circle-check text-emerald-400 text-[10px]"></i>
-                <span class="text-gray-300 font-medium">${r}</span>
-              </div>
-            `).join('');
+            reasonsList.innerHTML = sig.reasons.map(r => {
+              const isML = r.includes('ML Model');
+              const iconClass = isML ? 'fa-brain text-indigo-400' : 'fa-circle-check text-emerald-400';
+              return `
+                <div class="flex items-center gap-2 p-1.5 rounded bg-dark-bg/60 border border-dark-border/40 text-[11px]">
+                  <i class="fa-solid ${iconClass} text-[10px]"></i>
+                  <span class="text-gray-300 font-medium">${r}</span>
+                </div>
+              `;
+            }).join('');
           } else {
             reasonsList.innerHTML = '<div class="text-gray-500 italic p-1">No confirmation active. Waiting for setup...</div>';
           }

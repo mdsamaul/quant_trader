@@ -164,4 +164,6 @@ def generate_signal(df, min_confidence=0.75):
     elif put_conf >= min_confidence and put_conf > call_conf:
         return 'PUT', put_conf, reasons
     else:
-        return 'WAIT', max(call_conf, put_conf), ['Confidence below threshold' if reasons else 'No confluence']
+        wait_reasons = list(reasons)
+        wait_reasons.append(f"Technical Confluence: {int(max(call_conf, put_conf)*100)}% (Target: {int(min_confidence*100)}%)")
+        return 'WAIT', max(call_conf, put_conf), wait_reasons

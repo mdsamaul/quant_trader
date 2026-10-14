@@ -36,8 +36,14 @@ class Engine:
         self.vision_signal = None
         self.feed_status = "idle"
         self.feed_error = None
-        self._replay = None
         self._i = 0
+        self.bundle = None
+        if os.path.exists(self.cfg["model"]):
+            try:
+                self.bundle = joblib.load(self.cfg["model"])
+                self.s["threshold"] = self.bundle.get("threshold", 0.55)
+            except Exception:
+                pass
         self.reset()
         # Pre-load initial candles in background
         threading.Thread(target=self._initial_fetch, daemon=True).start()
@@ -58,7 +64,7 @@ class Engine:
             "trades_today": 0,
             "halted": False,
             "clicks": 0,
-            "threshold": 0.55,
+            "threshold": self.bundle.get("threshold", 0.55) if getattr(self, "bundle", None) else 0.55,
             "confluence": {"action": "WAIT", "confidence": 0.0, "reasons": []},
         }
         self.log = deque(maxlen=80)

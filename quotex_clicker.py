@@ -111,6 +111,12 @@ if IS_WIN:
     user32.SetCursorPos.restype = wintypes.BOOL
     user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
     user32.GetCursorPos.restype = wintypes.BOOL
+    user32.OpenInputDesktop.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    user32.OpenInputDesktop.restype = wintypes.HANDLE
+    user32.SetThreadDesktop.argtypes = [wintypes.HANDLE]
+    user32.SetThreadDesktop.restype = wintypes.BOOL
+    user32.CloseDesktop.argtypes = [wintypes.HANDLE]
+    user32.CloseDesktop.restype = wintypes.BOOL
     user32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(_INPUT), ctypes.c_int]
     user32.SendInput.restype = wintypes.UINT
     user32.GetSystemMetrics.argtypes = [ctypes.c_int]
@@ -119,6 +125,22 @@ if IS_WIN:
     user32.keybd_event.restype = None
     kernel32.GetCurrentThreadId.argtypes = []
     kernel32.GetCurrentThreadId.restype = wintypes.DWORD
+
+
+def _ensure_desktop() -> bool:
+    """Ensure the calling thread is attached to the interactive input desktop."""
+    if not IS_WIN:
+        return True
+    try:
+        p = wintypes.POINT()
+        if user32.GetCursorPos(ctypes.byref(p)):
+            return True
+        desk = user32.OpenInputDesktop(0, False, 0x01FF)
+        if desk:
+            return bool(user32.SetThreadDesktop(desk))
+    except Exception as e:
+        logger.debug(f"ensure_desktop: {e}")
+    return False
 
 
 def _win_list_windows() -> List[Tuple[int, str, Tuple[int, int, int, int]]]:
@@ -167,6 +189,7 @@ def _win_focus(hwnd) -> bool:
 
 
 def _win_click(x: int, y: int) -> None:
+    _ensure_desktop()
     pt = wintypes.POINT(int(x), int(y))
     hw = user32.WindowFromPoint(pt)
     if hw:
@@ -178,7 +201,7 @@ def _win_click(x: int, y: int) -> None:
     time.sleep(0.05)
     cur = wintypes.POINT()
     user32.GetCursorPos(ctypes.byref(cur))
-    if abs(cur.x - x) > 3 or abs(cur.y - y) > 3:
+    if abs(cur.x - x) > 5 or abs(cur.y - y) > 5:
         raise RuntimeError(f"cursor could not be moved to ({x},{y}); it is at ({cur.x},{cur.y}). "
                            f"Coordinates are outside the screen - run Scan again.")
     for flag, pause in ((0x0002, 0.09), (0x0004, 0.0)):  # LEFTDOWN, LEFTUP at current cursor
@@ -191,8 +214,37 @@ def _win_click(x: int, y: int) -> None:
 
 
 def _win_cursor() -> Tuple[int, int]:
+    _ensure_desktop()
     p = wintypes.POINT()
-    user32.GetCursorPos(ctypes.byref(p))
+    if user32.GetCursorPos(ctypes.byref(p)):
+        return int(p.x), int(p.y)
+
+    # Fallback 1: CURSORINFO
+    try:
+        class _CURSORINFO(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.DWORD),
+                ("flags", wintypes.DWORD),
+                ("hCursor", wintypes.HICON),
+                ("ptScreenPos", wintypes.POINT),
+            ]
+        ci = _CURSORINFO()
+        ci.cbSize = ctypes.sizeof(_CURSORINFO)
+        if user32.GetCursorInfo(ctypes.byref(ci)):
+            if ci.ptScreenPos.x != 0 or ci.ptScreenPos.y != 0:
+                return int(ci.ptScreenPos.x), int(ci.ptScreenPos.y)
+    except Exception:
+        pass
+
+    # Fallback 2: pyautogui
+    try:
+        import pyautogui
+        pos = pyautogui.position()
+        if pos.x != 0 or pos.y != 0:
+            return int(pos.x), int(pos.y)
+    except Exception:
+        pass
+
     return int(p.x), int(p.y)
 
 
@@ -360,16 +412,41 @@ class QuotexAutoClicker:
             logger.error(f"test click error: {e}")
             return {"success": False, "error": str(e)}
 
-    def capture_after(self, direction: str, seconds: int = 4):
-        """Hover over the button within `seconds`; the cursor position is saved."""
-        def work():
-            time.sleep(seconds)
-            p = self.get_mouse_position()
-            if direction.upper() == "CALL":
-                self.update_config(call_x=p["x"], call_y=p["y"])
-            else:
-                self.update_config(put_x=p["x"], put_y=p["y"])
-        threading.Thread(target=work, daemon=True).start()
+    def capture_now(self, direction: str, seconds: int = 3) -> Dict[str, Any]:
+        """Waits `seconds` then captures cursor position and updates config."""
+        wait_s = max(1, int(seconds))
+        time.sleep(wait_s)
+        p = self.get_mouse_position()
+        x, y = int(p.get("x", 0)), int(p.get("y", 0))
+
+        if x == 0 and y == 0:
+            logger.warning(f"Failed to capture cursor position: got ({x}, {y})")
+            return {
+                "success": False,
+                "error": f"Mouse cursor at ({x},{y}). Move your mouse over Quotex {direction.upper()} and try again.",
+                "x": 0,
+                "y": 0,
+                "direction": direction.upper(),
+            }
+
+        if direction.upper() == "CALL":
+            self.update_config(call_x=x, call_y=y)
+        else:
+            self.update_config(put_x=x, put_y=y)
+
+        logger.info(f"[GRAB OK] {direction.upper()} captured at ({x}, {y})")
+        cfg_dict = self.config.model_dump() if hasattr(self.config, "model_dump") else self.config.dict()
+        return {
+            "success": True,
+            "direction": direction.upper(),
+            "x": x,
+            "y": y,
+            "autoclick": cfg_dict,
+        }
+
+    def capture_after(self, direction: str, seconds: int = 3):
+        """Hover over the button within `seconds`; the cursor position is saved in background."""
+        threading.Thread(target=self.capture_now, args=(direction, seconds), daemon=True).start()
 
     # ---- scan ----
     def auto_detect_quotex_buttons(self, delay: float = 0) -> Dict[str, Any]:

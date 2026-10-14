@@ -99,11 +99,13 @@ def get_state():
         if ml_prob >= thr:
             action = "CALL"
             confidence = max(confidence, round(ml_prob, 2))
-            reasons.append(f"ML Model CALL (p={ml_prob:.2f} >= {thr:.2f})")
+            reasons.insert(0, f"ML Model CALL (Prob: {ml_prob*100:.1f}% >= {thr*100:.0f}%)")
         elif ml_prob <= 1.0 - thr:
             action = "PUT"
             confidence = max(confidence, round(1.0 - ml_prob, 2))
-            reasons.append(f"ML Model PUT (p={ml_prob:.2f} <= {1.0-thr:.2f})")
+            reasons.insert(0, f"ML Model PUT (Prob: {(1.0-ml_prob)*100:.1f}% >= {thr*100:.0f}%)")
+        else:
+            reasons.insert(0, f"ML Model: {ml_prob*100:.1f}% (Target: ≥ {thr*100:.0f}% CALL, ≤ {(1-thr)*100:.0f}% PUT)")
 
     return {
         "symbol": snap["cfg"].get("symbol", "BTC/USDT"),
@@ -117,6 +119,8 @@ def get_state():
             "confidence": confidence,
             "reasons": reasons,
             "ml_prob": ml_prob,
+            "threshold": thr,
+            "confluence_confidence": confluence.get("confidence", 0.0),
         },
         "session": {
             "trades": st.get("n", 0),
@@ -209,8 +213,8 @@ def scan_screen():
 @app.post("/api/click/grab")
 def grab_cursor(req: GrabCursorIn):
     clicker = get_clicker()
-    clicker.capture_after(req.direction, seconds=req.delay)
-    return {"status": "ok", "message": f"Hover mouse over {req.direction} button within {req.delay} seconds."}
+    res = clicker.capture_now(req.direction, seconds=req.delay)
+    return res
 
 
 @app.post("/api/update_data")
