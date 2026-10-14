@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 import threading
 import time
 from typing import Any, Dict, Optional
@@ -262,7 +263,7 @@ def get_vision_status():
 def trigger_backtest(background_tasks: BackgroundTasks, params: BacktestRunIn = Body(...)):
     def run_job():
         import subprocess
-        cmd = ["python", "run_backtest.py"]
+        cmd = [sys.executable, "run_backtest.py"]
         if params.source == "synthetic":
             cmd += ["--synthetic", "--edge", str(params.edge), "--bars", str(params.bars)]
         elif params.source == "ccxt":
