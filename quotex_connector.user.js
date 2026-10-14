@@ -46,25 +46,32 @@
     // 1. FLOATING HUD OVERLAY ON QUOTEX
     // -------------------------------------------------------------
     function createHUD() {
-        if (!document.body || document.getElementById("quant-trader-hud")) return;
+        if (document.getElementById("quant-trader-hud")) return;
+        const target = document.body || document.documentElement;
+        if (!target) return;
 
         const hud = document.createElement("div");
         hud.id = "quant-trader-hud";
         hud.innerHTML = `
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;cursor:move;">
                 <div style="display:flex;align-items:center;gap:6px;">
                     <div id="qt-status-dot" style="width:10px;height:10px;border-radius:50%;background:#ef4444;box-shadow:0 0 8px #ef4444;"></div>
                     <span style="font-weight:700;font-size:12px;letter-spacing:0.5px;color:#f8fafc;">QuantTrader AI</span>
                 </div>
-                <span id="qt-asset" style="font-size:10px;padding:2px 6px;background:rgba(255,255,255,0.08);border-radius:4px;color:#94a3b8;font-family:monospace;">CONNECTING</span>
+                <span id="qt-asset" style="font-size:10px;padding:2px 6px;background:rgba(255,255,255,0.08);border-radius:4px;color:#cbd5e1;font-family:monospace;font-weight:600;">CONNECTING</span>
             </div>
-            <div style="background:rgba(15,23,42,0.6);border-radius:6px;padding:8px;margin-bottom:8px;text-align:center;">
-                <div style="font-size:11px;color:#94a3b8;margin-bottom:2px;">AI PREDICTION (1M)</div>
-                <div id="qt-signal" style="font-size:20px;font-weight:900;color:#94a3b8;letter-spacing:1px;">WAIT</div>
-                <div id="qt-conf" style="font-size:12px;font-family:monospace;color:#cbd5e1;margin-top:2px;">Confidence: 0%</div>
-                <div id="qt-price" style="font-size:10px;color:#94a3b8;margin-top:2px;font-family:monospace;">Live: --</div>
+            <div style="background:rgba(15,23,42,0.7);border-radius:8px;padding:8px;margin-bottom:8px;text-align:center;">
+                <div style="font-size:10px;color:#94a3b8;margin-bottom:2px;letter-spacing:0.5px;">AI PREDICTION (1M)</div>
+                <div id="qt-signal" style="font-size:22px;font-weight:900;color:#fbbf24;letter-spacing:1px;">WAIT</div>
+                <div style="display:flex;justify-content:center;gap:10px;margin-top:4px;font-size:11px;font-family:monospace;">
+                    <span id="qt-call-prob" style="color:#10b981;font-weight:700;">CALL: --%</span>
+                    <span style="color:#475569;">|</span>
+                    <span id="qt-put-prob" style="color:#f43f5e;font-weight:700;">PUT: --%</span>
+                </div>
+                <div id="qt-target" style="font-size:10px;color:#818cf8;margin-top:3px;font-family:monospace;">Target: ≥62%</div>
+                <div id="qt-price" style="font-size:10px;color:#94a3b8;margin-top:2px;font-family:monospace;">Price: --</div>
             </div>
-            <div id="qt-reasons" style="font-size:10px;color:#64748b;max-height:42px;overflow-y:auto;margin-bottom:8px;line-height:1.3;">
+            <div id="qt-reasons" style="font-size:10px;color:#64748b;max-height:45px;overflow-y:auto;margin-bottom:8px;line-height:1.3;">
                 Syncing live 1m candles...
             </div>
             <div style="display:flex;gap:6px;align-items:center;justify-content:space-between;font-size:11px;color:#94a3b8;border-top:1px solid rgba(255,255,255,0.08);padding-top:6px;">
@@ -78,22 +85,22 @@
 
         Object.assign(hud.style, {
             position: "fixed",
-            top: "80px",
-            right: "260px",
-            width: "230px",
-            background: "rgba(10, 15, 29, 0.94)",
+            top: "70px",
+            left: "70px",
+            width: "240px",
+            background: "rgba(10, 15, 29, 0.96)",
             backdropFilter: "blur(14px)",
-            border: "1px solid rgba(99, 102, 241, 0.4)",
+            border: "1px solid rgba(99, 102, 241, 0.5)",
             borderRadius: "10px",
             padding: "12px",
-            zIndex: "9999999",
+            zIndex: "2147483647",
             color: "#e2e8f0",
             fontFamily: "system-ui, -apple-system, sans-serif",
-            boxShadow: "0 10px 30px -5px rgba(0, 0, 0, 0.8), 0 0 15px rgba(99, 102, 241, 0.25)",
+            boxShadow: "0 10px 30px -5px rgba(0, 0, 0, 0.9), 0 0 15px rgba(99, 102, 241, 0.35)",
             userSelect: "none"
         });
 
-        document.body.appendChild(hud);
+        target.appendChild(hud);
 
         document.getElementById("qt-auto-dom-click").addEventListener("change", (e) => {
             autoTradeInBrowser = e.target.checked;
@@ -118,11 +125,13 @@
         document.addEventListener("mouseup", () => { isDragging = false; });
     }
 
-    function updateHUD(status, signal, confidence, reasons, asset, price) {
+    function updateHUD(status, signal, confidence, reasons, asset, price, ml_prob, threshold) {
         createHUD();
         const dot = document.getElementById("qt-status-dot");
         const sigEl = document.getElementById("qt-signal");
-        const confEl = document.getElementById("qt-conf");
+        const callProbEl = document.getElementById("qt-call-prob");
+        const putProbEl = document.getElementById("qt-put-prob");
+        const targetEl = document.getElementById("qt-target");
         const priceEl = document.getElementById("qt-price");
         const reasonsEl = document.getElementById("qt-reasons");
         const assetEl = document.getElementById("qt-asset");
@@ -132,20 +141,27 @@
             dot.style.boxShadow = status ? "0 0 8px #10b981" : "0 0 8px #ef4444";
         }
         if (assetEl && asset) assetEl.innerText = asset.toUpperCase();
-        if (priceEl && price) priceEl.innerText = `Quote: ${price}`;
+        if (priceEl && price) priceEl.innerText = `Price: ${price}`;
+
+        const thrVal = threshold ? Math.round(threshold * 100) : 62;
+        if (targetEl) targetEl.innerText = `Target to Trade: ≥${thrVal}%`;
+
+        if (ml_prob !== null && ml_prob !== undefined) {
+            const callP = (ml_prob * 100).toFixed(1);
+            const putP = ((1.0 - ml_prob) * 100).toFixed(1);
+            if (callProbEl) callProbEl.innerText = `CALL: ${callP}%`;
+            if (putProbEl) putProbEl.innerText = `PUT: ${putP}%`;
+        }
 
         if (sigEl) {
             sigEl.innerText = signal;
             if (signal === "CALL") {
                 sigEl.style.color = "#10b981";
             } else if (signal === "PUT") {
-                sigEl.style.color = "#ef4444";
+                sigEl.style.color = "#f43f5e";
             } else {
-                sigEl.style.color = "#94a3b8";
+                sigEl.style.color = "#fbbf24";
             }
-        }
-        if (confEl) {
-            confEl.innerText = `Confidence: ${(confidence * 100).toFixed(1)}%`;
         }
         if (reasonsEl && reasons && reasons.length) {
             reasonsEl.innerHTML = reasons.map(r => `• ${r}`).join("<br/>");
@@ -205,7 +221,7 @@
                 const res = JSON.parse(respText);
                 isConnected = true;
                 if (res.signal) {
-                    updateHUD(true, res.signal.action, res.signal.confidence, res.signal.reasons, currentAsset, lastRecordedPrice);
+                    updateHUD(true, res.signal.action, res.signal.confidence, res.signal.reasons, currentAsset, lastRecordedPrice, res.signal.ml_prob, res.signal.threshold);
                     if (autoTradeInBrowser && (res.signal.action === "CALL" || res.signal.action === "PUT")) {
                         checkAndClickDOM(res.signal.action, res.signal.confidence);
                     }
@@ -307,15 +323,32 @@
     window.WebSocket.prototype = OrigWebSocket.prototype;
 
     // -------------------------------------------------------------
-    // 4. ROBUST DOM TICK SCANNER (Matches Quotex UI in Screenshot)
+    // 4. ROBUST DOM TICK & ASSET SCANNER
     // -------------------------------------------------------------
     function scanQuotexDOM() {
-        // 1. Detect active asset name (e.g., EUR/USD)
-        const assetEl = document.querySelector(".asset-select__name, .current-symbol, .trading-chart-header__symbol, [data-qa='asset-name'], .section-deal__asset");
-        if (assetEl && assetEl.innerText) {
-            const clean = assetEl.innerText.replace(/[\n\r]+/g, ' ').trim();
-            if (clean && clean !== currentAsset) {
+        // 1. Detect active asset name (e.g. EUR/USD, EUR/USD (OTC), USD/BDT (OTC))
+        let foundAsset = null;
+        const activeTab = document.querySelector(".tabs__item--active .tabs__text, .tab--active .tab__title, .tab.active, [class*='tab'][class*='active'] [class*='title'], [class*='tab'][class*='active'] [class*='name'], .header-chart__asset-name");
+        if (activeTab && activeTab.innerText) {
+            foundAsset = activeTab.innerText;
+        }
+        if (!foundAsset) {
+            const assetEl = document.querySelector(".asset-select__name, .current-symbol, .trading-chart-header__symbol, [data-qa='asset-name'], .section-deal__asset, [class*='deal-form'] [class*='asset']");
+            if (assetEl && assetEl.innerText) {
+                foundAsset = assetEl.innerText;
+            }
+        }
+        if (!foundAsset && document.title) {
+            const m = document.title.match(/([A-Z0-9/_\-\s]+)\s*\|/i);
+            if (m && m[1] && !m[1].toLowerCase().includes("trading") && !m[1].toLowerCase().includes("quotex")) {
+                foundAsset = m[1];
+            }
+        }
+        if (foundAsset) {
+            const clean = foundAsset.replace(/[+\-]?\d+%/g, '').replace(/[\n\r]+/g, ' ').trim();
+            if (clean && clean.length >= 3 && clean.length <= 30 && clean !== currentAsset) {
                 currentAsset = clean;
+                console.log("[QuantTrader] Switched Active Asset to:", currentAsset);
             }
         }
 

@@ -95,17 +95,22 @@ def get_state():
     confidence = confluence.get("confidence", 0.0)
     reasons = list(confluence.get("reasons", []))
 
+    call_prob = round(ml_prob * 100, 1) if ml_prob is not None else None
+    put_prob = round((1.0 - ml_prob) * 100, 1) if ml_prob is not None else None
+    dominant_prob = max(call_prob, put_prob) if call_prob is not None else None
+    dominant_dir = ("CALL" if ml_prob >= 0.5 else "PUT") if ml_prob is not None else "WAIT"
+
     if ml_prob is not None:
         if ml_prob >= thr:
             action = "CALL"
             confidence = max(confidence, round(ml_prob, 2))
-            reasons.insert(0, f"ML Model CALL (Prob: {ml_prob*100:.1f}% >= {thr*100:.0f}%)")
+            reasons.insert(0, f"ML Model CALL (Prob: {call_prob}% >= {thr*100:.0f}%)")
         elif ml_prob <= 1.0 - thr:
             action = "PUT"
             confidence = max(confidence, round(1.0 - ml_prob, 2))
-            reasons.insert(0, f"ML Model PUT (Prob: {(1.0-ml_prob)*100:.1f}% >= {thr*100:.0f}%)")
+            reasons.insert(0, f"ML Model PUT (Prob: {put_prob}% >= {thr*100:.0f}%)")
         else:
-            reasons.insert(0, f"ML Model: {ml_prob*100:.1f}% (Target: ≥ {thr*100:.0f}% CALL, ≤ {(1-thr)*100:.0f}% PUT)")
+            reasons.insert(0, f"ML Model: CALL {call_prob}% | PUT {put_prob}% (Target: ≥ {thr*100:.0f}%)")
 
     return {
         "symbol": snap["cfg"].get("symbol", "BTC/USDT"),
@@ -119,6 +124,10 @@ def get_state():
             "confidence": confidence,
             "reasons": reasons,
             "ml_prob": ml_prob,
+            "call_prob": call_prob,
+            "put_prob": put_prob,
+            "dominant_prob": dominant_prob,
+            "dominant_dir": dominant_dir,
             "threshold": thr,
             "confluence_confidence": confluence.get("confidence", 0.0),
         },

@@ -280,6 +280,7 @@ class Engine:
                 "confidence": conf,
                 "reasons": reasons,
                 "ml_prob": ml_prob,
+                "threshold": thr,
             },
             "bot_running": self.running,
             "open_trade": self.s["open_trade"],

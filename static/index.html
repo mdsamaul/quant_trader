@@ -153,18 +153,18 @@
       <div class="flex justify-between items-start">
         <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">Live Signal & Prob</span>
         <div class="flex items-center gap-1.5">
-          <span class="text-[10px] text-gray-400 font-mono">PROB:</span>
-          <span id="signalConfidencePill" class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">--%</span>
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">CALL: <span id="callProbVal">--%</span></span>
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold">PUT: <span id="putProbVal">--%</span></span>
         </div>
       </div>
       <div class="my-1.5 flex items-center justify-between">
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2.5">
           <div id="signalBadge" class="text-2xl font-black text-amber-400 tracking-wider">WAIT</div>
           <div id="signalDirectionIcon" class="text-xl text-gray-500"><i class="fa-solid fa-hourglass-half"></i></div>
         </div>
         <div class="text-right text-[11px] font-mono text-gray-400">
-          <div>ML Prob: <span id="mlProbDisplay" class="text-white font-semibold">--</span></div>
-          <div>Target: <span id="targetProbDisplay" class="text-indigo-400 font-semibold">≥62%</span></div>
+          <div>Dominant: <span id="dominantDirDisplay" class="text-white font-bold">--</span></div>
+          <div>Target: <span id="targetProbDisplay" class="text-indigo-400 font-bold">≥62%</span></div>
         </div>
       </div>
       <!-- Confidence Bar -->
@@ -660,37 +660,43 @@
           const badge = document.getElementById('signalBadge');
           const icon = document.getElementById('signalDirectionIcon');
           const confBar = document.getElementById('confidenceBar');
-          const confPill = document.getElementById('signalConfidencePill');
-          const mlDisplay = document.getElementById('mlProbDisplay');
+          const callEl = document.getElementById('callProbVal');
+          const putEl = document.getElementById('putProbVal');
+          const domEl = document.getElementById('dominantDirDisplay');
           const targetDisplay = document.getElementById('targetProbDisplay');
 
           badge.innerText = sig.action;
-          const confPct = Math.round((sig.confidence || 0) * 100);
-          const mlPct = (sig.ml_prob !== null && sig.ml_prob !== undefined) ? (sig.ml_prob * 100).toFixed(1) : null;
           const thrPct = sig.threshold ? Math.round(sig.threshold * 100) : 62;
+          const callP = (sig.call_prob !== null && sig.call_prob !== undefined) ? Number(sig.call_prob).toFixed(1) :
+                        (sig.ml_prob !== null ? (sig.ml_prob * 100).toFixed(1) : '--');
+          const putP = (sig.put_prob !== null && sig.put_prob !== undefined) ? Number(sig.put_prob).toFixed(1) :
+                       (sig.ml_prob !== null ? ((1.0 - sig.ml_prob) * 100).toFixed(1) : '--');
+          const domDir = sig.dominant_dir || (callP !== '--' && parseFloat(callP) >= 50 ? 'CALL' : 'PUT');
+          const domProb = sig.dominant_prob !== null && sig.dominant_prob !== undefined ? sig.dominant_prob : (domDir === 'CALL' ? callP : putP);
 
-          confPill.innerText = mlPct !== null ? `${mlPct}%` : `${confPct}%`;
-          if (mlDisplay) mlDisplay.innerText = mlPct !== null ? `${mlPct}%` : `${confPct}%`;
+          if (callEl) callEl.innerText = `${callP}%`;
+          if (putEl) putEl.innerText = `${putP}%`;
+          if (domEl) {
+            domEl.innerText = `${domDir} (${domProb}%)`;
+            domEl.className = domDir === 'CALL' ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold';
+          }
           if (targetDisplay) targetDisplay.innerText = `≥${thrPct}%`;
 
-          const barPct = mlPct !== null ? parseFloat(mlPct) : confPct;
+          const barPct = domProb !== '--' ? parseFloat(domProb) : Math.round((sig.confidence || 0) * 100);
           confBar.style.width = `${Math.min(Math.max(barPct, 0), 100)}%`;
 
           if (sig.action === 'CALL') {
             badge.className = 'text-2xl font-black text-emerald-400 tracking-wider';
             icon.innerHTML = '<i class="fa-solid fa-arrow-trend-up text-emerald-400"></i>';
             confBar.className = 'bg-emerald-500 h-full rounded-full transition-all duration-500';
-            confPill.className = 'text-xs font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
           } else if (sig.action === 'PUT') {
             badge.className = 'text-2xl font-black text-rose-400 tracking-wider';
             icon.innerHTML = '<i class="fa-solid fa-arrow-trend-down text-rose-400"></i>';
             confBar.className = 'bg-rose-500 h-full rounded-full transition-all duration-500';
-            confPill.className = 'text-xs font-mono font-bold px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30';
           } else {
             badge.className = 'text-2xl font-black text-amber-400 tracking-wider';
             icon.innerHTML = '<i class="fa-solid fa-hourglass-half text-amber-400"></i>';
             confBar.className = 'bg-amber-500 h-full rounded-full transition-all duration-500';
-            confPill.className = 'text-xs font-mono font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30';
           }
 
           // Confluence list

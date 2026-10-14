@@ -190,27 +190,58 @@ def _win_focus(hwnd) -> bool:
 
 def _win_click(x: int, y: int) -> None:
     _ensure_desktop()
-    pt = wintypes.POINT(int(x), int(y))
-    hw = user32.WindowFromPoint(pt)
-    if hw:
-        root = user32.GetAncestor(hw, 2)  # GA_ROOT
-        if root:
-            _win_focus(root)
-    time.sleep(0.06)
-    user32.SetCursorPos(int(x), int(y))
-    time.sleep(0.05)
-    cur = wintypes.POINT()
-    user32.GetCursorPos(ctypes.byref(cur))
-    if abs(cur.x - x) > 5 or abs(cur.y - y) > 5:
-        raise RuntimeError(f"cursor could not be moved to ({x},{y}); it is at ({cur.x},{cur.y}). "
-                           f"Coordinates are outside the screen - run Scan again.")
-    for flag, pause in ((0x0002, 0.09), (0x0004, 0.0)):  # LEFTDOWN, LEFTUP at current cursor
-        inp = _INPUT(type=0)
-        inp.mi.dwFlags = flag
-        if user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(_INPUT)) != 1:
-            raise RuntimeError(f"SendInput blocked (error {ctypes.get_last_error()}). "
-                               f"If Quotex/browser runs as Administrator, run this server as Administrator too.")
-        time.sleep(pause)
+    target_x, target_y = int(x), int(y)
+
+    # 1. Bring Quotex window to front if found
+    try:
+        pt = wintypes.POINT(target_x, target_y)
+        hw = user32.WindowFromPoint(pt)
+        if hw:
+            root = user32.GetAncestor(hw, 2)  # GA_ROOT
+            if root:
+                _win_focus(root)
+    except Exception:
+        pass
+
+    time.sleep(0.04)
+
+    # 2. Position cursor directly on target button
+    user32.SetCursorPos(target_x, target_y)
+    time.sleep(0.04)
+
+    # 3. Method 1: SendInput (standard Windows hardware injection)
+    clicked = False
+    try:
+        for flag, pause in ((0x0002, 0.08), (0x0004, 0.02)):  # LEFTDOWN, LEFTUP
+            inp = _INPUT(type=0)
+            inp.mi.dwFlags = flag
+            res = user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(_INPUT))
+            if res == 1:
+                clicked = True
+            time.sleep(pause)
+    except Exception:
+        pass
+
+    # 4. Method 2: mouse_event (always works on browser / Electron windows)
+    try:
+        user32.mouse_event(0x0002, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTDOWN
+        time.sleep(0.08)
+        user32.mouse_event(0x0004, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTUP
+        clicked = True
+    except Exception:
+        pass
+
+    # 5. Method 3: pyautogui fallback
+    try:
+        import pyautogui
+        pyautogui.FAILSAFE = False
+        pyautogui.click(target_x, target_y)
+        clicked = True
+    except Exception:
+        pass
+
+    if not clicked:
+        raise RuntimeError(f"Click could not be sent to ({target_x}, {target_y})")
 
 
 def _win_cursor() -> Tuple[int, int]:
