@@ -24,54 +24,6 @@ from pydantic import BaseModel
 import json
 import os
 import time
-import pyautogui
-
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "autoclick_config.json")
-
-def load_config():
-    if os.path.exists(CONFIG_PATH):
-        try:
-            with open(CONFIG_PATH, "r") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {
-        "call_button": [1620, 480],
-        "put_button": [1620, 560]
-    }
-
-def execute_click(action: str):
-    """
-    Simulates a mouse click on Quotex CALL or PUT buttons.
-    """
-    config = load_config()
-    action = action.upper()
-    
-    if action == "CALL":
-        coords = config.get("call_button", [1620, 480])
-    elif action == "PUT":
-        coords = config.get("put_button", [1620, 560])
-    else:
-        print(f"[CLICKER] Invalid action: {action}")
-        return False
-
-    try:
-        x, y = coords[0], coords[1]
-        print(f"[CLICKER] Executing {action} click at ({x}, {y})")
-        
-        # Save previous mouse position
-        orig_x, orig_y = pyautogui.position()
-        
-        # Click on target
-        pyautogui.click(x, y)
-        time.sleep(0.05)
-        
-        # Move back to avoid interfering with manual tasks
-        pyautogui.moveTo(orig_x, orig_y)
-        return True
-    except Exception as e:
-        print(f"[CLICKER] Click error: {e}")
-        return False
 
 logger = logging.getLogger("QuotexClicker")
 IS_WIN = sys.platform.startswith("win")
@@ -476,3 +428,21 @@ class QuotexAutoClicker:
         except Exception as e:
             logger.exception("scan error")
             return {"success": False, "error": f"{type(e).__name__}: {e}"}
+
+
+_default_clicker: Optional[QuotexAutoClicker] = None
+
+
+def get_clicker() -> QuotexAutoClicker:
+    global _default_clicker
+    if _default_clicker is None:
+        _default_clicker = QuotexAutoClicker()
+    return _default_clicker
+
+
+def execute_click(action: str) -> bool:
+    """
+    Executes an automated click for CALL or PUT using QuotexAutoClicker.
+    """
+    return get_clicker().execute_click(action)
+

@@ -8,7 +8,7 @@ def _norm(df: pd.DataFrame) -> pd.DataFrame:
     for tcol in ("time", "timestamp", "datetime", "date"):
         if tcol in df.columns:
             t = df[tcol]
-            if np.issubdtype(t.dtype, np.number):
+            if pd.api.types.is_numeric_dtype(t.dtype):
                 t = pd.to_datetime(t, unit="ms" if t.iloc[0] > 1e11 else "s")
             else:
                 t = pd.to_datetime(t)
@@ -17,7 +17,21 @@ def _norm(df: pd.DataFrame) -> pd.DataFrame:
     if "volume" not in df.columns:
         df["volume"] = 0.0
     df = df[["open", "high", "low", "close", "volume"]].astype(float)
-    return df[~df.index.duplicated()].sort_index().dropna()
+    df = df[~df.index.duplicated()].sort_index().dropna()
+
+    # Reconstruct OHLC bodies & wicks if feed returns flat Open==High==Low==Close ticks (e.g. Yahoo Forex)
+    if len(df) > 1 and (df["high"] == df["low"]).mean() > 0.6:
+        c = df["close"]
+        o = c.shift(1).fillna(c)
+        diff = (c - o).abs()
+        spr = float(diff[diff > 0].median()) if (diff > 0).any() else 0.0001
+        hi = np.maximum(o, c) + spr * 0.35
+        lo = np.minimum(o, c) - spr * 0.35
+        df["open"] = o
+        df["high"] = hi
+        df["low"] = lo
+
+    return df
 
 
 def load_csv(path: str) -> pd.DataFrame:

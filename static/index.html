@@ -2,154 +2,743 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>QuantTrader Terminal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuantTrader Pro — Algorithmic Binary Terminal</title>
+  <!-- Google Fonts & Tailwind -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+  <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Outfit', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            },
+            dark: {
+              bg: '#080b11',
+              card: '#0f1422',
+              cardHover: '#141c2e',
+              border: '#1b253b',
+              subtle: '#263554',
+            }
+          }
+        }
+      }
+    }
+  </script>
   <style>
-    body { background-color: #0b0e14; color: #d1d5db; font-family: 'Inter', sans-serif; }
-    .card { background-color: #121824; border: 1px solid #1f293d; border-radius: 0.75rem; }
+    body {
+      background-color: #080b11;
+      color: #e2e8f0;
+      font-family: 'Outfit', sans-serif;
+    }
+    .glass-panel {
+      background: rgba(15, 20, 34, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid #1b253b;
+      border-radius: 1rem;
+    }
+    .glass-panel-subtle {
+      background: rgba(20, 28, 46, 0.6);
+      border: 1px solid #23314d;
+      border-radius: 0.75rem;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #0b0f19;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #23314d;
+      border-radius: 3px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #3b82f6;
+    }
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.7; transform: scale(1.05); }
+    }
+    .pulse-dot {
+      animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
   </style>
 </head>
-<body class="p-6">
-  <!-- Top Bar -->
-  <header class="flex justify-between items-center mb-6 border-b border-gray-800 pb-4">
+<body class="min-h-screen p-4 md:p-6 flex flex-col justify-between custom-scrollbar">
+
+  <!-- TOP HEADER -->
+  <header class="flex flex-wrap justify-between items-center gap-4 mb-6 pb-4 border-b border-dark-border">
+    <!-- Brand Info -->
     <div class="flex items-center space-x-3">
-      <div class="h-10 w-10 bg-indigo-600 rounded-lg flex items-center justify-center font-bold text-white text-xl">Q</div>
+      <div class="h-11 w-11 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 text-white font-extrabold text-xl">
+        <i class="fa-solid fa-bolt"></i>
+      </div>
       <div>
-        <h1 class="text-xl font-bold text-white tracking-wide">QuantTrader <span class="text-xs bg-indigo-900 text-indigo-300 px-2 py-0.5 rounded">Quotex Bot</span></h1>
-        <p class="text-xs text-gray-500">Autonomous Confluence Trading Engine</p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-xl font-bold tracking-tight text-white">QuantTrader <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-semibold uppercase tracking-wider">PRO OTC</span></h1>
+          <span id="edgeBadge" class="hidden text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Edge Proven</span>
+        </div>
+        <p class="text-xs text-gray-400">Institutional Walk-Forward Paper Engine & Auto-Clicker</p>
       </div>
     </div>
-    <div class="flex items-center space-x-4">
-      <span id="connectionBadge" class="flex items-center text-xs text-emerald-400"><span class="h-2 w-2 rounded-full bg-emerald-500 mr-2 animate-ping"></span> Live Engine</span>
-      <button onclick="toggleBot()" id="botToggleBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm px-4 py-2 rounded-lg transition">Start Auto-Trading</button>
+
+    <!-- Feed / Asset Switcher -->
+    <div class="flex items-center gap-2 bg-dark-card border border-dark-border px-2 py-1.5 rounded-xl text-xs">
+      <span class="text-gray-400 px-1"><i class="fa-solid fa-database mr-1"></i> Feed:</span>
+      <select id="feedSourceSelect" onchange="changeFeed()" class="bg-dark-bg border border-dark-border text-white text-xs rounded-lg px-2.5 py-1 focus:outline-none focus:border-indigo-500">
+        <option value="ccxt:BTC/USDT">Binance BTC/USDT (1m)</option>
+        <option value="yf:EURUSD=X">Yahoo EUR/USD (1m)</option>
+        <option value="replay:DEMO">Synthetic Replay (Planted Edge)</option>
+      </select>
+    </div>
+
+    <!-- Status & Action Buttons -->
+    <div class="flex items-center space-x-3">
+      <!-- Live Status Pill -->
+      <div id="connectionPill" class="flex items-center space-x-2 bg-dark-card border border-dark-border px-3 py-1.5 rounded-xl text-xs font-medium text-amber-400">
+        <span class="h-2.5 w-2.5 rounded-full bg-amber-400 pulse-dot"></span>
+        <span id="connectionText">Initializing...</span>
+      </div>
+
+      <!-- Quick Backtest Button -->
+      <button onclick="triggerBacktest()" class="bg-dark-card hover:bg-dark-cardHover border border-dark-border text-gray-300 hover:text-white px-3.5 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5">
+        <i class="fa-solid fa-flask text-indigo-400"></i> Run Backtest
+      </button>
+
+      <!-- Bot Master Toggle -->
+      <button onclick="toggleBot()" id="botToggleBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs px-5 py-2.5 rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center gap-2">
+        <i class="fa-solid fa-play"></i> <span>Start Bot</span>
+      </button>
     </div>
   </header>
 
-  <!-- Metrics Grid -->
-  <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-    <div class="card p-4">
-      <span class="text-xs text-gray-400 font-medium">Active Asset</span>
-      <div class="text-lg font-bold text-white mt-1" id="assetDisplay">EUR/USD (OTC)</div>
-    </div>
-    <div class="card p-4">
-      <span class="text-xs text-gray-400 font-medium">Live Signal</span>
-      <div class="text-lg font-bold mt-1 text-yellow-400" id="signalDisplay">SCANNING...</div>
-    </div>
-    <div class="card p-4">
-      <span class="text-xs text-gray-400 font-medium">Model Confidence</span>
-      <div class="text-lg font-bold text-white mt-1" id="confidenceDisplay">--%</div>
-    </div>
-    <div class="card p-4">
-      <span class="text-xs text-gray-400 font-medium">Session Win Rate</span>
-      <div class="text-lg font-bold text-emerald-400 mt-1" id="winRateDisplay">82.4%</div>
-    </div>
-  </div>
-
-  <!-- Main Body: Chart + Control Panel -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Chart Container -->
-    <div class="lg:col-span-2 card p-4 flex flex-col h-[520px]">
-      <div class="flex justify-between items-center mb-3">
-        <h2 class="text-sm font-semibold text-gray-300">Live Candle Stream & Technical Bands</h2>
-        <span class="text-xs text-gray-500">Timeframe: M1</span>
+  <!-- METRICS CARDS GRID (4 Cards) -->
+  <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <!-- Card 1: Active Asset -->
+    <div class="glass-panel p-4 flex flex-col justify-between relative overflow-hidden group hover:border-indigo-500/40 transition">
+      <div class="flex justify-between items-start">
+        <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">Active Asset</span>
+        <span class="text-xs px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono" id="timeframeBadge">1M</span>
       </div>
-      <div id="chartContainer" class="flex-1 w-full rounded overflow-hidden"></div>
+      <div class="my-2">
+        <div class="text-xl font-extrabold text-white tracking-tight" id="assetDisplay">BTC/USDT</div>
+        <div class="text-[11px] text-gray-400 mt-0.5" id="feedSourceDisplay">Exchange: Binance (Live Spot)</div>
+      </div>
+      <div class="text-[11px] text-emerald-400 flex items-center">
+        <i class="fa-regular fa-clock mr-1"></i> <span id="barTimeDisplay">Waiting for candle...</span>
+      </div>
     </div>
 
-    <!-- Side Panel: Controls & Quotex Coordinates -->
-    <div class="space-y-6">
-      <!-- Clicker Calibration -->
-      <div class="card p-5">
-        <h3 class="text-sm font-semibold text-white mb-3 flex items-center justify-between">
-          <span>Quotex Clicker Config</span>
-          <i class="fa-solid fa-crosshairs text-indigo-400"></i>
+    <!-- Card 2: Live Confluence Signal -->
+    <div class="glass-panel p-4 flex flex-col justify-between relative overflow-hidden group hover:border-indigo-500/40 transition">
+      <div class="flex justify-between items-start">
+        <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">Live Signal</span>
+        <span id="signalConfidencePill" class="text-xs font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-300">--%</span>
+      </div>
+      <div class="my-2 flex items-center gap-3">
+        <div id="signalBadge" class="text-2xl font-black text-amber-400 tracking-wider">WAIT</div>
+        <div id="signalDirectionIcon" class="text-xl text-gray-500"><i class="fa-solid fa-hourglass-half"></i></div>
+      </div>
+      <!-- Confidence Bar -->
+      <div class="w-full bg-dark-bg h-1.5 rounded-full overflow-hidden">
+        <div id="confidenceBar" class="bg-indigo-500 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+      </div>
+    </div>
+
+    <!-- Card 3: Session Win Rate -->
+    <div class="glass-panel p-4 flex flex-col justify-between relative overflow-hidden group hover:border-indigo-500/40 transition">
+      <div class="flex justify-between items-start">
+        <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">Session Win Rate</span>
+        <span class="text-[11px] text-gray-400">BE: <span id="breakevenDisplay" class="font-mono text-gray-300">54.1%</span></span>
+      </div>
+      <div class="my-2 flex items-baseline gap-2">
+        <div class="text-2xl font-extrabold text-white" id="winRateDisplay">0.0%</div>
+        <span class="text-xs text-gray-400" id="tradesCountDisplay">(0 trades)</span>
+      </div>
+      <div class="text-[11px] text-gray-400 flex justify-between items-center">
+        <span>95% Wilson Low: <b id="ciLowDisplay" class="text-gray-300 font-mono">0.0%</b></span>
+        <span id="winLossCounts" class="text-gray-400 font-mono">0W / 0L</span>
+      </div>
+    </div>
+
+    <!-- Card 4: Net PnL & Safety -->
+    <div class="glass-panel p-4 flex flex-col justify-between relative overflow-hidden group hover:border-indigo-500/40 transition">
+      <div class="flex justify-between items-start">
+        <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">Session PnL</span>
+        <span id="haltStatusPill" class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-gray-800 text-gray-400">Normal</span>
+      </div>
+      <div class="my-2 flex items-baseline gap-2">
+        <div class="text-2xl font-extrabold text-gray-200" id="pnlDisplay">+0.00 u</div>
+        <span class="text-[11px] text-gray-400">@ 85% payout</span>
+      </div>
+      <div class="text-[11px] flex justify-between items-center text-gray-400">
+        <span>Consec Losses: <b id="consecLossDisplay" class="text-rose-400 font-mono">0 / 3</b></span>
+        <button id="resumeBtn" onclick="resumeBot()" class="hidden text-[10px] bg-rose-600/30 text-rose-300 border border-rose-500/40 px-2 py-0.5 rounded hover:bg-rose-600 hover:text-white transition font-semibold">Resume</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- MAIN BODY: CHART & CONTROL PANELS -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+    <!-- CHART SECTION (2 Columns) -->
+    <div class="lg:col-span-2 glass-panel p-4 flex flex-col h-[560px]">
+      <div class="flex flex-wrap justify-between items-center mb-3 pb-2 border-b border-dark-border gap-2">
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-chart-candlestick text-indigo-400 text-sm"></i>
+          <h2 class="text-sm font-semibold text-white tracking-wide">Live Stream & Technical Overlays</h2>
+        </div>
+        <div class="flex items-center space-x-3 text-xs">
+          <span class="flex items-center gap-1.5 text-gray-400 font-mono"><span class="h-2 w-2 rounded-full bg-emerald-400"></span> CALL</span>
+          <span class="flex items-center gap-1.5 text-gray-400 font-mono"><span class="h-2 w-2 rounded-full bg-rose-400"></span> PUT</span>
+          <button onclick="chart.timeScale().fitContent()" class="text-gray-400 hover:text-white px-2 py-1 rounded bg-dark-bg border border-dark-border transition" title="Fit Chart Content">
+            <i class="fa-solid fa-arrows-rotate text-[11px]"></i>
+          </button>
+        </div>
+      </div>
+      <div id="chartContainer" class="flex-1 w-full rounded-lg overflow-hidden relative">
+        <div id="chartLoadingOverlay" class="absolute inset-0 bg-dark-bg/80 flex items-center justify-center z-10 text-xs text-gray-400 font-medium">
+          <i class="fa-solid fa-circle-notch fa-spin text-indigo-500 text-lg mr-2"></i> Loading chart feed...
+        </div>
+      </div>
+    </div>
+
+    <!-- SIDEBAR CONTROLS (1 Column) -->
+    <div class="space-y-4">
+      <!-- Card 1: Quotex Clicker Calibration -->
+      <div class="glass-panel p-4">
+        <div class="flex justify-between items-center mb-3">
+          <div class="flex items-center gap-2">
+            <i class="fa-solid fa-crosshairs text-indigo-400 text-sm"></i>
+            <h3 class="text-sm font-semibold text-white">Quotex Clicker Calibration</h3>
+          </div>
+          <!-- Auto-Click Enabled Switch -->
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="autoClickEnabled" onchange="saveAutoclickConfig()" class="sr-only peer">
+            <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+          </label>
+        </div>
+
+        <div class="space-y-2.5 text-xs">
+          <!-- CALL Coords -->
+          <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-dark-bg border border-dark-border">
+            <span class="text-emerald-400 font-semibold flex items-center gap-1.5"><i class="fa-solid fa-arrow-up"></i> CALL (X, Y):</span>
+            <div class="flex items-center gap-1.5">
+              <input id="callX" type="number" placeholder="X" class="bg-dark-card border border-dark-border rounded px-2 py-1 w-16 text-center text-white focus:outline-none focus:border-indigo-500 font-mono text-xs">
+              <input id="callY" type="number" placeholder="Y" class="bg-dark-card border border-dark-border rounded px-2 py-1 w-16 text-center text-white focus:outline-none focus:border-indigo-500 font-mono text-xs">
+              <button onclick="testClick('CALL')" class="bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white px-2 py-1 rounded transition text-[11px] font-medium" title="Test Click at CALL Coords">Test</button>
+            </div>
+          </div>
+
+          <!-- PUT Coords -->
+          <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-dark-bg border border-dark-border">
+            <span class="text-rose-400 font-semibold flex items-center gap-1.5"><i class="fa-solid fa-arrow-down"></i> PUT (X, Y):</span>
+            <div class="flex items-center gap-1.5">
+              <input id="putX" type="number" placeholder="X" class="bg-dark-card border border-dark-border rounded px-2 py-1 w-16 text-center text-white focus:outline-none focus:border-indigo-500 font-mono text-xs">
+              <input id="putY" type="number" placeholder="Y" class="bg-dark-card border border-dark-border rounded px-2 py-1 w-16 text-center text-white focus:outline-none focus:border-indigo-500 font-mono text-xs">
+              <button onclick="testClick('PUT')" class="bg-rose-600/30 hover:bg-rose-600 text-rose-300 hover:text-white px-2 py-1 rounded transition text-[11px] font-medium" title="Test Click at PUT Coords">Test</button>
+            </div>
+          </div>
+
+          <!-- Quick Tools (Auto-Scan & Grab Cursor) -->
+          <div class="grid grid-cols-2 gap-2 pt-1">
+            <button onclick="scanWindow()" id="scanBtn" class="bg-dark-bg hover:bg-dark-card border border-dark-border text-gray-300 hover:text-white py-1.5 rounded-lg text-[11px] font-medium transition flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-camera text-indigo-400"></i> Auto-Scan
+            </button>
+            <button onclick="grabCursor('CALL')" class="bg-dark-bg hover:bg-dark-card border border-dark-border text-gray-300 hover:text-white py-1.5 rounded-lg text-[11px] font-medium transition flex items-center justify-center gap-1.5" title="Hover mouse over CALL button within 3 seconds">
+              <i class="fa-solid fa-hand-pointer text-indigo-400"></i> Hover CALL (3s)
+            </button>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="grabCursor('PUT')" class="bg-dark-bg hover:bg-dark-card border border-dark-border text-gray-300 hover:text-white py-1.5 rounded-lg text-[11px] font-medium transition flex items-center justify-center gap-1.5" title="Hover mouse over PUT button within 3 seconds">
+              <i class="fa-solid fa-hand-pointer text-rose-400"></i> Hover PUT (3s)
+            </button>
+            <button onclick="saveAutoclickConfig()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-1.5 rounded-lg transition text-[11px] flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-floppy-disk"></i> Save Settings
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2: Confluence Breakdown -->
+      <div class="glass-panel p-4">
+        <h3 class="text-sm font-semibold text-white mb-2 flex items-center justify-between">
+          <span>Confluence Breakdown</span>
+          <span id="reasonsCount" class="text-[10px] text-gray-400 font-mono">0 active</span>
         </h3>
-        <div class="space-y-3 text-xs">
-          <div class="flex justify-between items-center">
-            <span class="text-gray-400">CALL Button (X, Y):</span>
-            <input id="callCoords" type="text" value="1620, 480" class="bg-gray-900 border border-gray-700 px-2 py-1 rounded w-28 text-center text-white" />
-          </div>
-          <div class="flex justify-between items-center">
-            <span class="text-gray-400">PUT Button (X, Y):</span>
-            <input id="putCoords" type="text" value="1620, 560" class="bg-gray-900 border border-gray-700 px-2 py-1 rounded w-28 text-center text-white" />
-          </div>
-          <div class="flex justify-between items-center">
-            <span class="text-gray-400">Min Confidence Threshold:</span>
-            <input id="minConfidence" type="number" step="0.05" value="0.75" class="bg-gray-900 border border-gray-700 px-2 py-1 rounded w-20 text-center text-white" />
-          </div>
-          <button onclick="saveConfig()" class="w-full mt-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 rounded transition">Save Settings</button>
-        </div>
-      </div>
-
-      <!-- Execution Log -->
-      <div class="card p-5 h-[230px] flex flex-col">
-        <h3 class="text-sm font-semibold text-white mb-2">Trade Execution Logs</h3>
-        <div id="logBox" class="flex-1 overflow-y-auto text-xs font-mono space-y-1 text-gray-400 border border-gray-800 p-2 rounded bg-gray-950">
-          <div>[SYSTEM] Connected to quotation feed.</div>
-          <div>[INFO] Model initialized with Confluence Engine.</div>
+        <div id="confluenceList" class="space-y-1.5 text-xs text-gray-400 max-h-[140px] overflow-y-auto custom-scrollbar">
+          <div class="text-gray-500 italic">No signal trigger yet. Scanning candle indicators...</div>
         </div>
       </div>
     </div>
   </div>
 
+  <!-- BOTTOM SECTION: TABS (LEDGER & SYSTEM LOGS) -->
+  <div class="glass-panel p-4">
+    <div class="flex items-center justify-between mb-3 border-b border-dark-border pb-2">
+      <div class="flex space-x-3 text-xs font-semibold">
+        <button onclick="switchTab('ledger')" id="tabLedgerBtn" class="text-indigo-400 border-b-2 border-indigo-500 pb-1 transition flex items-center gap-1.5">
+          <i class="fa-solid fa-book"></i> Paper Trade Ledger
+        </button>
+        <button onclick="switchTab('logs')" id="tabLogsBtn" class="text-gray-400 hover:text-gray-200 pb-1 transition flex items-center gap-1.5">
+          <i class="fa-solid fa-terminal"></i> Terminal Logs
+        </button>
+      </div>
+      <span class="text-[11px] text-gray-500 font-mono" id="lastUpdatedDisplay">Synced</span>
+    </div>
+
+    <!-- Ledger View -->
+    <div id="ledgerTab" class="overflow-x-auto custom-scrollbar max-h-[220px]">
+      <table class="w-full text-left text-xs font-mono">
+        <thead class="text-gray-400 border-b border-dark-border bg-dark-bg/50">
+          <tr>
+            <th class="py-2 px-3">Time</th>
+            <th class="py-2 px-3">Direction</th>
+            <th class="py-2 px-3">Entry Price</th>
+            <th class="py-2 px-3">Close Price</th>
+            <th class="py-2 px-3">Confidence</th>
+            <th class="py-2 px-3">Result</th>
+            <th class="py-2 px-3 text-right">PnL</th>
+          </tr>
+        </thead>
+        <tbody id="ledgerTableBody" class="divide-y divide-dark-border/40 text-gray-300">
+          <tr>
+            <td colspan="7" class="py-4 text-center text-gray-500 font-sans italic">No trades settled in this session yet. Bot will record every trade here.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Logs View (Hidden by default) -->
+    <div id="logsTab" class="hidden font-mono text-xs text-gray-400 bg-dark-bg p-3 rounded-lg border border-dark-border h-[200px] overflow-y-auto custom-scrollbar space-y-1">
+      <div class="text-gray-500">[SYSTEM] QuantTrader Engine online. Initializing feeds...</div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toast" class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 px-4 py-2.5 rounded-xl shadow-xl text-xs font-medium flex items-center gap-2"></div>
+
+  <!-- JAVASCRIPT LOGIC -->
   <script>
     // Lightweight Charts Setup
-    const chart = LightweightCharts.createChart(document.getElementById('chartContainer'), {
-      layout: { background: { color: '#121824' }, textColor: '#9ca3af' },
-      grid: { vertLines: { color: '#1f293d' }, horzLines: { color: '#1f293d' } },
-      timeScale: { timeVisible: true, secondsVisible: false }
+    const chartContainer = document.getElementById('chartContainer');
+    const chart = LightweightCharts.createChart(chartContainer, {
+      autoSize: true,
+      layout: {
+        background: { color: '#0f1422' },
+        textColor: '#94a3b8',
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 11,
+      },
+      grid: {
+        vertLines: { color: '#172033' },
+        horzLines: { color: '#172033' },
+      },
+      timeScale: {
+        timeVisible: true,
+        secondsVisible: false,
+        borderColor: '#1e293b',
+      },
+      rightPriceScale: {
+        borderColor: '#1e293b',
+      },
+      crosshair: {
+        mode: LightweightCharts.CrosshairMode.Normal,
+      }
     });
+
     const candleSeries = chart.addCandlestickSeries({
-      upColor: '#10b981', downColor: '#ef4444',
-      borderVisible: false, wickUpColor: '#10b981', wickDownColor: '#ef4444'
+      upColor: '#10b981',
+      downColor: '#f43f5e',
+      borderVisible: false,
+      wickUpColor: '#10b981',
+      wickDownColor: '#f43f5e',
     });
 
-    let botActive = false;
+    let botIsRunning = false;
+    let initialChartLoaded = false;
+    let currentTab = 'ledger';
 
-    function toggleBot() {
-      botActive = !botActive;
-      const btn = document.getElementById('botToggleBtn');
-      if (botActive) {
-        btn.classList.replace('bg-emerald-600', 'bg-rose-600');
-        btn.classList.replace('hover:bg-emerald-500', 'hover:bg-rose-500');
-        btn.innerText = "Stop Auto-Trading";
-        log("[BOT] Auto execution activated.");
+    function showToast(message, type = 'info') {
+      const toast = document.getElementById('toast');
+      toast.innerText = message;
+      if (type === 'success') {
+        toast.className = 'fixed bottom-6 right-6 z-50 transform translate-y-0 opacity-100 transition-all duration-300 px-4 py-2.5 rounded-xl shadow-xl text-xs font-medium flex items-center gap-2 bg-emerald-600 text-white border border-emerald-400/30';
+      } else if (type === 'error') {
+        toast.className = 'fixed bottom-6 right-6 z-50 transform translate-y-0 opacity-100 transition-all duration-300 px-4 py-2.5 rounded-xl shadow-xl text-xs font-medium flex items-center gap-2 bg-rose-600 text-white border border-rose-400/30';
       } else {
-        btn.classList.replace('bg-rose-600', 'bg-emerald-600');
-        btn.classList.replace('hover:bg-rose-500', 'hover:bg-emerald-500');
-        btn.innerText = "Start Auto-Trading";
-        log("[BOT] Auto execution paused.");
+        toast.className = 'fixed bottom-6 right-6 z-50 transform translate-y-0 opacity-100 transition-all duration-300 px-4 py-2.5 rounded-xl shadow-xl text-xs font-medium flex items-center gap-2 bg-indigo-600 text-white border border-indigo-400/30';
+      }
+      setTimeout(() => {
+        toast.className = 'fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 px-4 py-2.5 rounded-xl shadow-xl text-xs font-medium flex items-center gap-2';
+      }, 3500);
+    }
+
+    function switchTab(tab) {
+      currentTab = tab;
+      const ledgerTab = document.getElementById('ledgerTab');
+      const logsTab = document.getElementById('logsTab');
+      const btnLedger = document.getElementById('tabLedgerBtn');
+      const btnLogs = document.getElementById('tabLogsBtn');
+
+      if (tab === 'ledger') {
+        ledgerTab.classList.remove('hidden');
+        logsTab.classList.add('hidden');
+        btnLedger.className = 'text-indigo-400 border-b-2 border-indigo-500 pb-1 transition flex items-center gap-1.5';
+        btnLogs.className = 'text-gray-400 hover:text-gray-200 pb-1 transition flex items-center gap-1.5';
+      } else {
+        ledgerTab.classList.add('hidden');
+        logsTab.classList.remove('hidden');
+        btnLogs.className = 'text-indigo-400 border-b-2 border-indigo-500 pb-1 transition flex items-center gap-1.5';
+        btnLedger.className = 'text-gray-400 hover:text-gray-200 pb-1 transition flex items-center gap-1.5';
       }
     }
 
-    function log(msg) {
-      const box = document.getElementById('logBox');
-      const time = new Date().toLocaleTimeString();
-      box.innerHTML += `<div>[${time}] ${msg}</div>`;
-      box.scrollTop = box.scrollHeight;
+    // Toggle Bot (Start / Stop)
+    async function toggleBot() {
+      try {
+        const res = await fetch('/api/bot/toggle', { method: 'POST' });
+        const data = await res.json();
+        syncBotButtonState(data.running);
+        showToast(data.running ? 'Trading bot started!' : 'Trading bot paused.', data.running ? 'success' : 'info');
+      } catch (err) {
+        showToast('Failed to toggle bot: ' + err.message, 'error');
+      }
     }
 
-    // Polling Backend API
+    async function resumeBot() {
+      try {
+        const res = await fetch('/api/bot/resume', { method: 'POST' });
+        const data = await res.json();
+        showToast('Trading resumed! Consec-loss counter reset.', 'success');
+      } catch (err) {
+        showToast('Failed to resume bot: ' + err.message, 'error');
+      }
+    }
+
+    function syncBotButtonState(running) {
+      botIsRunning = running;
+      const btn = document.getElementById('botToggleBtn');
+      if (running) {
+        btn.className = "bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs px-5 py-2.5 rounded-xl shadow-lg shadow-rose-600/20 transition-all flex items-center gap-2";
+        btn.innerHTML = `<i class="fa-solid fa-pause"></i> <span>Stop Bot</span>`;
+      } else {
+        btn.className = "bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs px-5 py-2.5 rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center gap-2";
+        btn.innerHTML = `<i class="fa-solid fa-play"></i> <span>Start Bot</span>`;
+      }
+    }
+
+    // Change Data Feed
+    async function changeFeed() {
+      const val = document.getElementById('feedSourceSelect').value;
+      const [source, symbol] = val.split(':');
+      try {
+        const res = await fetch('/api/config/feed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source, symbol, timeframe: '1m', poll: 5 })
+        });
+        showToast(`Feed switched to ${symbol} (${source})`, 'info');
+        initialChartLoaded = false;
+      } catch (e) {
+        showToast('Feed switch error: ' + e.message, 'error');
+      }
+    }
+
+    // Autoclicker settings
+    async function saveAutoclickConfig() {
+      const enabled = document.getElementById('autoClickEnabled').checked;
+      const call_x = parseInt(document.getElementById('callX').value) || 0;
+      const call_y = parseInt(document.getElementById('callY').value) || 0;
+      const put_x = parseInt(document.getElementById('putX').value) || 0;
+      const put_y = parseInt(document.getElementById('putY').value) || 0;
+
+      try {
+        const res = await fetch('/api/config/autoclick', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled, call_x, call_y, put_x, put_y })
+        });
+        const data = await res.json();
+        showToast(enabled ? 'Auto-clicker enabled & coordinates saved!' : 'Coordinates saved (Auto-clicker off)', 'success');
+      } catch (e) {
+        showToast('Error saving clicker config: ' + e.message, 'error');
+      }
+    }
+
+    async function testClick(direction) {
+      try {
+        const res = await fetch('/api/click/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ direction })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`Test ${direction} click executed at (${data.clicked_at.x}, ${data.clicked_at.y})`, 'success');
+        } else {
+          showToast(`Test click failed: ${data.error}`, 'error');
+        }
+      } catch (e) {
+        showToast('Test click error: ' + e.message, 'error');
+      }
+    }
+
+    async function scanWindow() {
+      const btn = document.getElementById('scanBtn');
+      btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin text-indigo-400"></i> Scanning...`;
+      try {
+        const res = await fetch('/api/click/scan', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById('callX').value = data.call_x;
+          document.getElementById('callY').value = data.call_y;
+          document.getElementById('putX').value = data.put_x;
+          document.getElementById('putY').value = data.put_y;
+          showToast(`Quotex buttons detected! Coordinates updated.`, 'success');
+        } else {
+          showToast(`Scan failed: ${data.error}`, 'error');
+        }
+      } catch (e) {
+        showToast('Scan error: ' + e.message, 'error');
+      } finally {
+        btn.innerHTML = `<i class="fa-solid fa-camera text-indigo-400"></i> Auto-Scan`;
+      }
+    }
+
+    async function grabCursor(direction) {
+      showToast(`Position mouse cursor over ${direction} button within 3 seconds!`, 'info');
+      try {
+        await fetch('/api/click/grab', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ direction, delay: 3 })
+        });
+        setTimeout(async () => {
+          const res = await fetch('/api/state');
+          const data = await res.json();
+          if (data.autoclick) {
+            document.getElementById('callX').value = data.autoclick.call_x || 0;
+            document.getElementById('callY').value = data.autoclick.call_y || 0;
+            document.getElementById('putX').value = data.autoclick.put_x || 0;
+            document.getElementById('putY').value = data.autoclick.put_y || 0;
+            showToast(`${direction} coordinates captured!`, 'success');
+          }
+        }, 3600);
+      } catch (e) {
+        showToast('Grab error: ' + e.message, 'error');
+      }
+    }
+
+    async function triggerBacktest() {
+      showToast('Running walk-forward model backtest in background...', 'info');
+      try {
+        const res = await fetch('/api/backtest/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: 'synthetic', edge: 0.4, bars: 6000 })
+        });
+        const data = await res.json();
+        showToast(data.message, 'success');
+      } catch (e) {
+        showToast('Backtest error: ' + e.message, 'error');
+      }
+    }
+
+    let configInputsInitialized = false;
+
+    // Polling Backend State
     async function syncState() {
       try {
         const res = await fetch('/api/state');
+        if (!res.ok) return;
         const data = await res.json();
-        
-        if (data.candles) candleSeries.setData(data.candles);
-        if (data.signal) {
-          const sigEl = document.getElementById('signalDisplay');
-          sigEl.innerText = `${data.signal.action} (${(data.signal.confidence * 100).toFixed(0)}%)`;
-          sigEl.className = data.signal.action === 'CALL' ? 'text-lg font-bold mt-1 text-emerald-400' : 
-                            data.signal.action === 'PUT' ? 'text-lg font-bold mt-1 text-rose-500' : 'text-lg font-bold mt-1 text-yellow-400';
-          document.getElementById('confidenceDisplay').innerText = `${(data.signal.confidence * 100).toFixed(0)}%`;
+
+        // Feed & Connection Pill
+        const pill = document.getElementById('connectionPill');
+        const text = document.getElementById('connectionText');
+        if (data.feed_status === 'connected') {
+          pill.className = 'flex items-center space-x-2 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-xl text-xs font-medium text-emerald-400';
+          text.innerHTML = '<span class="h-2 w-2 rounded-full bg-emerald-400 mr-1.5 animate-ping"></span> Live Feed Connected';
+        } else if (data.feed_status === 'error') {
+          pill.className = 'flex items-center space-x-2 bg-rose-500/10 border border-rose-500/20 px-3 py-1.5 rounded-xl text-xs font-medium text-rose-400';
+          text.innerText = 'Feed Error';
+        } else {
+          pill.className = 'flex items-center space-x-2 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-xl text-xs font-medium text-amber-400';
+          text.innerText = 'Connecting...';
         }
-      } catch (e) {
-        console.error(e);
+
+        // Sync Asset Display
+        document.getElementById('assetDisplay').innerText = data.symbol;
+        document.getElementById('feedSourceDisplay').innerText = `Source: ${data.source.toUpperCase()} (${data.timeframe})`;
+        document.getElementById('lastUpdatedDisplay').innerText = `Synced: ${new Date().toLocaleTimeString()}`;
+
+        // Sync Bot Button
+        syncBotButtonState(data.is_running);
+
+        // Chart Data
+        if (data.candles && data.candles.length) {
+          candleSeries.setData(data.candles);
+          document.getElementById('chartLoadingOverlay').classList.add('hidden');
+          if (!initialChartLoaded) {
+            chart.timeScale().fitContent();
+            initialChartLoaded = true;
+          }
+          const lastCandle = data.candles[data.candles.length - 1];
+          const dt = new Date(lastCandle.time * 1000);
+          document.getElementById('barTimeDisplay').innerText = `Bar: ${dt.toLocaleTimeString()} | C: ${lastCandle.close}`;
+        }
+
+        // Signal Display
+        if (data.signal) {
+          const sig = data.signal;
+          const badge = document.getElementById('signalBadge');
+          const icon = document.getElementById('signalDirectionIcon');
+          const confBar = document.getElementById('confidenceBar');
+          const confPill = document.getElementById('signalConfidencePill');
+
+          badge.innerText = sig.action;
+          const confPct = Math.round((sig.confidence || 0) * 100);
+          confPill.innerText = `${confPct}%`;
+          confBar.style.width = `${Math.min(confPct, 100)}%`;
+
+          if (sig.action === 'CALL') {
+            badge.className = 'text-2xl font-black text-emerald-400 tracking-wider';
+            icon.innerHTML = '<i class="fa-solid fa-arrow-trend-up text-emerald-400"></i>';
+            confBar.className = 'bg-emerald-500 h-full rounded-full transition-all duration-500';
+          } else if (sig.action === 'PUT') {
+            badge.className = 'text-2xl font-black text-rose-400 tracking-wider';
+            icon.innerHTML = '<i class="fa-solid fa-arrow-trend-down text-rose-400"></i>';
+            confBar.className = 'bg-rose-500 h-full rounded-full transition-all duration-500';
+          } else {
+            badge.className = 'text-2xl font-black text-amber-400 tracking-wider';
+            icon.innerHTML = '<i class="fa-solid fa-hourglass-half text-amber-400"></i>';
+            confBar.className = 'bg-amber-500 h-full rounded-full transition-all duration-500';
+          }
+
+          // Confluence list
+          const reasonsList = document.getElementById('confluenceList');
+          document.getElementById('reasonsCount').innerText = `${sig.reasons.length} active`;
+          if (sig.reasons && sig.reasons.length) {
+            reasonsList.innerHTML = sig.reasons.map(r => `
+              <div class="flex items-center gap-2 p-1.5 rounded bg-dark-bg/60 border border-dark-border/40">
+                <i class="fa-solid fa-circle-check text-emerald-400 text-[10px]"></i>
+                <span class="text-gray-300 font-medium">${r}</span>
+              </div>
+            `).join('');
+          } else {
+            reasonsList.innerHTML = '<div class="text-gray-500 italic p-1">No confirmation active. Waiting for setup...</div>';
+          }
+        }
+
+        // Session Stats
+        if (data.session) {
+          const sess = data.session;
+          document.getElementById('winRateDisplay').innerText = `${sess.win_rate.toFixed(1)}%`;
+          document.getElementById('tradesCountDisplay').innerText = `(${sess.trades} trades)`;
+          document.getElementById('ciLowDisplay').innerText = `${sess.ci_low.toFixed(1)}%`;
+          document.getElementById('breakevenDisplay').innerText = `${sess.breakeven.toFixed(1)}%`;
+          document.getElementById('winLossCounts').innerText = `${sess.wins}W / ${sess.trades - sess.wins}L`;
+
+          const pnlEl = document.getElementById('pnlDisplay');
+          const pnlVal = sess.pnl || 0;
+          pnlEl.innerText = `${pnlVal >= 0 ? '+' : ''}${pnlVal.toFixed(2)} u`;
+          pnlEl.className = pnlVal > 0 ? 'text-2xl font-extrabold text-emerald-400' :
+                            pnlVal < 0 ? 'text-2xl font-extrabold text-rose-400' : 'text-2xl font-extrabold text-gray-200';
+
+          document.getElementById('consecLossDisplay').innerText = `${sess.consec_losses} / 3`;
+
+          const haltPill = document.getElementById('haltStatusPill');
+          const resumeBtn = document.getElementById('resumeBtn');
+          if (sess.halted) {
+            haltPill.className = 'text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30';
+            haltPill.innerText = 'Halted (Loss Limit)';
+            resumeBtn.classList.remove('hidden');
+          } else {
+            haltPill.className = 'text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-gray-800 text-gray-400';
+            haltPill.innerText = 'Active';
+            resumeBtn.classList.add('hidden');
+          }
+
+          // Edge proven badge
+          if (sess.model_info && sess.model_info.edge_proven) {
+            document.getElementById('edgeBadge').classList.remove('hidden');
+          }
+        }
+
+        // Autoclicker Inputs & Feed Select (initial sync once)
+        if (!configInputsInitialized) {
+          if (data.source && data.symbol) {
+            const feedVal = `${data.source}:${data.symbol}`;
+            const sel = document.getElementById('feedSourceSelect');
+            for (let i = 0; i < sel.options.length; i++) {
+              if (sel.options[i].value === feedVal) {
+                sel.selectedIndex = i;
+                break;
+              }
+            }
+          }
+          if (data.autoclick) {
+            document.getElementById('autoClickEnabled').checked = Boolean(data.autoclick.enabled);
+            document.getElementById('callX').value = data.autoclick.call_x || 0;
+            document.getElementById('callY').value = data.autoclick.call_y || 0;
+            document.getElementById('putX').value = data.autoclick.put_x || 0;
+            document.getElementById('putY').value = data.autoclick.put_y || 0;
+          }
+          configInputsInitialized = true;
+        }
+
+        // Ledger Table
+        if (data.ledger && data.ledger.length) {
+          const tbody = document.getElementById('ledgerTableBody');
+          tbody.innerHTML = data.ledger.map(row => {
+            const isWin = row.result === 'WIN';
+            const isTie = row.result === 'TIE';
+            const badgeClass = isWin ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                               isTie ? 'bg-gray-700 text-gray-300' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30';
+            const pnlClass = row.pnl > 0 ? 'text-emerald-400' : row.pnl < 0 ? 'text-rose-400' : 'text-gray-400';
+            return `
+              <tr class="hover:bg-dark-card/40 transition">
+                <td class="py-2 px-3 text-gray-400">${row.time}</td>
+                <td class="py-2 px-3 font-semibold ${row.dir === 'CALL' ? 'text-emerald-400' : 'text-rose-400'}">${row.dir}</td>
+                <td class="py-2 px-3">${Number(row.entry).toFixed(4)}</td>
+                <td class="py-2 px-3">${Number(row.close).toFixed(4)}</td>
+                <td class="py-2 px-3 text-gray-400">${(row.prob * 100).toFixed(0)}%</td>
+                <td class="py-2 px-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${badgeClass}">${row.result}</span></td>
+                <td class="py-2 px-3 text-right font-bold ${pnlClass}">${row.pnl > 0 ? '+' : ''}${Number(row.pnl).toFixed(2)}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+
+        // Logs View
+        if (data.logs && data.logs.length) {
+          const logsTab = document.getElementById('logsTab');
+          logsTab.innerHTML = data.logs.map(l => `<div>${l}</div>`).join('');
+        }
+
+      } catch (err) {
+        console.error('State sync error:', err);
       }
     }
+
+    // Poll every 2 seconds
     setInterval(syncState, 2000);
+    syncState();
   </script>
 </body>
 </html>
